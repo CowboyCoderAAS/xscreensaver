@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+<screensaver name="minesweep" _label="MineSweep">
+
+  <command arg="-root"/>
+
+  <!--
+  <video href="https://www.youtube.com/watch?v=lVEi089s1_c"/>
+  don't have a video reference but would be a good idea in the future-->
+
+  <!--
+  <number id="delay" type="slider" arg="-delay %"
+          _label="Frame rate" _low-label="Low" _high-label="High"
+          low="0" high="250000" default="10000"
+          convert="invert"/>
+
+  <boolean id="grey" _label="Grey" arg-set="-grey"/>
+
+  <boolean id="showfps" _label="Show frame rate" arg-set="-fps"/>
+  
+  used to update the settings and stuff-->
+  <xscreensaver-updater />
+
+  <_description>
+Playes MineSweeper
+
+Written by Albert Andrew Spencer; 2017.
+  </_description>
+</screensaver>
