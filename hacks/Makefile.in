@@ -117,7 +117,7 @@ SRCS		= attraction.c blitspin.c bouboule.c braid.c bubbles.c \
 		  barcode.c piecewise.c cloudlife.c fontglide.c apple2.c \
 		  apple2-main.c analogtv.c xanalogtv.c pong.c wormhole.c \
 		  pacman.c pacman_ai.c pacman_level.c \
-		  fuzzyflakes.c anemotaxis.c memscroller.c substrate.c \
+		  fuzzyflakes.c anemotaxis.c memscroller.c minesweep.c substrate.c \
 		  intermomentary.c fireworkx.c fiberlamp.c \
 		  boxfit.c interaggregate.c celtic.c cwaves.c m6502.c \
 		  asm6502.c abstractile.c lcdscrub.c hexadrop.c \
@@ -157,7 +157,7 @@ OBJS		= attraction.o blitspin.o bouboule.o braid.o bubbles.o \
 		  barcode.o piecewise.o cloudlife.o fontglide.o apple2.o \
 		  apple2-main.o analogtv.o xanalogtv.o pong.o wormhole.o \
 		  pacman.o pacman_ai.o pacman_level.o \
-		  fuzzyflakes.o anemotaxis.o memscroller.o substrate.o \
+		  fuzzyflakes.o anemotaxis.o memscroller.o minesweep.o substrate.o \
 		  intermomentary.o fireworkx.o fiberlamp.o boxfit.o \
 		  interaggregate.o celtic.o cwaves.o webcollage-cocoa.o \
 		  webcollage-helper-cocoa.o m6502.o asm6502.o abstractile.o \
@@ -181,7 +181,7 @@ EXES		= attraction blitspin bouboule braid decayscreen deco \
 		  polyominoes thornbird  fluidballs anemone halftone \
 		  metaballs eruption popsquares barcode piecewise cloudlife \
 		  fontglide apple2 xanalogtv pong  wormhole \
-		  pacman fuzzyflakes anemotaxis memscroller substrate \
+		  pacman fuzzyflakes anemotaxis memscroller minesweep substrate \
 		  intermomentary fireworkx fiberlamp boxfit interaggregate \
 		  celtic cwaves m6502 abstractile lcdscrub hexadrop \
 		  tessellimage binaryring \
@@ -240,7 +240,7 @@ MEN		= anemone.man apollonian.man attraction.man \
 		  anemotaxis.man memscroller.man substrate.man \
 		  intermomentary.man fireworkx.man fiberlamp.man boxfit.man \
 		  interaggregate.man celtic.man cwaves.man abstractile.man \
-		  lcdscrub.man hexadrop.man tessellimage.man binaryring.man
+		  lcdscrub.man hexadrop.man tessellimage.man binaryring.man minesweep.man
 
 RETIRED_MEN	= ant.man bubbles.man critical.man flag.man forest.man \
 		  laser.man lightning.man lisa.man lissie.man lmorph.man \
@@ -624,6 +624,9 @@ lmorph:		lmorph.o	$(HACK_OBJS)
 
 maze:		maze.o		$(HACK_OBJS) $(ERASE) $(LOGO)
 	$(CC_HACK) -o $@ $@.o	$(HACK_OBJS) $(ERASE) $(LOGO) $(HACK_LIBS)
+
+minesweep:	minesweep.o	$(HACK_OBJS)
+	$(CC_HACK) -o $@ $@.o $(HACK_OBJS) $(HACK_LIBS)
 
 moire:		moire.o		$(HACK_OBJS) $(COL) $(SHM)
 	$(CC_HACK) -o $@ $@.o	$(HACK_OBJS) $(COL) $(SHM) $(HACK_LIBS) $(THRL)
@@ -2075,6 +2078,17 @@ metaballs.o: $(UTILS_SRC)/resources.h
 metaballs.o: $(UTILS_SRC)/usleep.h
 metaballs.o: $(UTILS_SRC)/visual.h
 metaballs.o: $(UTILS_SRC)/yarandom.h
+minesweep.o: ../config.h
+minesweep.o: $(srcdir)/fps.h
+minesweep.o: $(srcdir)/screenhackI.h
+minesweep.o: $(srcdir)/screenhack.h
+minesweep.o: $(UTILS_SRC)/colors.h
+minesweep.o: $(UTILS_SRC)/grabscreen.h
+minesweep.o: $(UTILS_SRC)/hsv.h
+minesweep.o: $(UTILS_SRC)/resources.h
+minesweep.o: $(UTILS_SRC)/usleep.h
+minesweep.o: $(UTILS_SRC)/visual.h
+minesweep.o: $(UTILS_SRC)/yarandom.h
 moire2.o: ../config.h
 moire2.o: $(srcdir)/fps.h
 moire2.o: $(srcdir)/screenhackI.h

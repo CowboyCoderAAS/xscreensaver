@@ -14,7 +14,7 @@
 "*grabDesktopImages:	True",
 "*grabVideoFrames:	False",
 "*chooseRandomImages:	True",
-"*imageDirectory:	/Library/Desktop Pictures/",
+"*imageDirectory:	/usr/share/wallpapers/",
 "*nice:			10",
 "*memoryLimit:		0",
 "*lock:			False",
@@ -32,7 +32,7 @@
 "*authWarningSlack:	20",
 "*textMode:		file",
 "*textLiteral:		XScreenSaver",
-"*textFile:		",
+"*textFile:		/usr/share/doc/xserver-common/copyright",
 "*textProgram:		fortune",
 "*textURL:		https://en.wikipedia.org/w/index.php?title=Special:NewPages&feed=rss",
 "*overlayTextForeground:	#FFFF00",
@@ -47,10 +47,11 @@
 "*demoCommand: xscreensaver-demo",
 "*prefsCommand: xscreensaver-demo -prefs",
 "*helpURL: https://www.jwz.org/xscreensaver/man.html",
-"*loadURL: firefox '%s' || mozilla '%s' || netscape '%s'",
-"*manualCommand: xterm -sb -fg black -bg gray75 -T '%s manual' \
-		    -e /bin/sh -c 'man \"%s\" ; read foo'",
+"*loadURL: gnome-open '%s'",
+"*manualCommand: gnome-terminal --title '%s manual' \
+		--command '/bin/sh -c \"man %s; read foo\"'",
 "*dateFormat:		%d-%b-%y (%a); %I:%M %p",
+"*newLoginCommand:	dm-tool switch-to-greeter",
 "*installColormap:	True",
 "*programs:								      \
 				maze -root				    \\n\

@@ -3,7 +3,7 @@
 
 *.o
 
-*Makefile*
+*Makefile
 
 po/*.gmo
 po/.intltool-merge-cache
@@ -211,6 +211,7 @@ hacks/m6502.h
 hacks/maze
 hacks/memscroller
 hacks/metaballs
+hacks/minesweep
 hacks/moire
 hacks/moire2
 hacks/mountain

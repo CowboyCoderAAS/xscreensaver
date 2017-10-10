@@ -106,7 +106,7 @@ struct state {
 
 
 static void *
-greynetic_init (Display *dpy, Window window)
+minesweep_init (Display *dpy, Window window)
 {
   struct state *st = (struct state *) calloc (1, sizeof(*st));
 # ifdef DO_STIPPLE
@@ -160,7 +160,7 @@ greynetic_init (Display *dpy, Window window)
 }
 
 static unsigned long
-greynetic_draw (Display *dpy, Window window, void *closure)
+minesweep_draw (Display *dpy, Window window, void *closure)
 {
   struct state *st = (struct state *) closure;
   int x, y, w=0, h=0, i;
@@ -252,7 +252,7 @@ greynetic_draw (Display *dpy, Window window, void *closure)
 }
 
 
-static const char *greynetic_defaults [] = {
+static const char *minesweep_defaults [] = {
   ".background:	black",
   ".foreground:	white",
   "*fpsSolid:	true",
@@ -264,14 +264,14 @@ static const char *greynetic_defaults [] = {
   0
 };
 
-static XrmOptionDescRec greynetic_options [] = {
+static XrmOptionDescRec minesweep_options [] = {
   { "-delay",		".delay",	XrmoptionSepArg, 0 },
   { "-grey",		".grey",	XrmoptionNoArg, "True" },
   { 0, 0, 0, 0 }
 };
 
 static void
-greynetic_reshape (Display *dpy, Window window, void *closure, 
+minesweep_reshape (Display *dpy, Window window, void *closure, 
                  unsigned int w, unsigned int h)
 {
   struct state *st = (struct state *) closure;
@@ -280,18 +280,18 @@ greynetic_reshape (Display *dpy, Window window, void *closure,
 }
 
 static Bool
-greynetic_event (Display *dpy, Window window, void *closure, XEvent *event)
+minesweep_event (Display *dpy, Window window, void *closure, XEvent *event)
 {
   return False;
 }
 
 static void
-greynetic_free (Display *dpy, Window window, void *closure)
+minesweep_free (Display *dpy, Window window, void *closure)
 {
   struct state *st = (struct state *) closure;
   XFreeGC (st->dpy, st->gc);
   free (st);
 }
 
-XSCREENSAVER_MODULE ("Greynetic", greynetic)
+XSCREENSAVER_MODULE ("MineSweep", minesweep)
 
