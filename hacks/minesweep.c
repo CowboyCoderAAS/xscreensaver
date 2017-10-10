@@ -10,6 +10,13 @@
  * implied warranty.
  */
 
+/*
+ * Albert Andrew Spencer
+ * 10/10/17
+ * This will play minesweep, based off of the greynetic created by Jamie Zawinski
+ *
+ */ 
+
 #include "screenhack.h"
 
 #ifndef HAVE_JWXYZ
@@ -35,6 +42,7 @@
  * # include <X11/bitmaps/vlines3>
 */
 
+/*
 #ifdef DO_STIPPLE
 #define stipple_width  16
 #define stipple_height 4
@@ -61,6 +69,8 @@ static unsigned char dimple3_bits[] = {
    0x11, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0x11, 0x00, 0x00,
    0x00, 0x00, 0x00, 0x00, 0x11, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
    0x11, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+*/ // might need these later or the basic idea to create effects and bevles
+
 
 #define flipped_gray_width  4
 #define flipped_gray_height 2
@@ -89,7 +99,7 @@ static char vlines3_bits[] = { 0x02};
 
 #endif /* DO_STIPPLE */
 
-struct state {
+struct state { // this puppy holds all the info that will be moved from frame to frame
   Display *dpy;
   Window window;
 
@@ -104,6 +114,24 @@ struct state {
   Colormap cmap;
 };
 
+static const char *minesweep_defaults [] = {
+  ".background:	black",
+  ".foreground:	white",
+  "*fpsSolid:	true",
+  "*delay:	10000",
+#ifdef HAVE_MOBILE
+  "*ignoreRotation: True",
+#endif
+  0
+};
+
+static XrmOptionDescRec minesweep_options [] = {
+  { "-delay",		".delay",	XrmoptionSepArg, 0 },
+  { "-grey",		".grey",	XrmoptionNoArg, "True" },
+  { 0, 0, 0, 0 }
+};
+
+// The functions
 
 static void *
 minesweep_init (Display *dpy, Window window)
@@ -251,24 +279,7 @@ minesweep_draw (Display *dpy, Window window, void *closure)
   return st->delay;
 }
 
-
-static const char *minesweep_defaults [] = {
-  ".background:	black",
-  ".foreground:	white",
-  "*fpsSolid:	true",
-  "*delay:	10000",
-  "*grey:	false",
-#ifdef HAVE_MOBILE
-  "*ignoreRotation: True",
-#endif
-  0
-};
 
-static XrmOptionDescRec minesweep_options [] = {
-  { "-delay",		".delay",	XrmoptionSepArg, 0 },
-  { "-grey",		".grey",	XrmoptionNoArg, "True" },
-  { 0, 0, 0, 0 }
-};
 
 static void
 minesweep_reshape (Display *dpy, Window window, void *closure, 

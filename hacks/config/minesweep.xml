@@ -1,29 +1,44 @@
 <?xml version="1.0" encoding="ISO-8859-1"?>
 
-<screensaver name="minesweep" _label="MineSweep">
+<screensaver name="minesweep" _label="Mine Sweep">
 
-  <command arg="-root"/>
+	<command arg="-root"/>
+	
+	<number 
+		id="width" 
+		type="spinbutton" 
+		args="-width %" 
+		_label="Width"
+		low="5"
+		high="80"
+		default="30"/>
+	<number 
+		id="height" 
+		type="spinbutton" 
+		args="-height %" 
+		_label="Height"
+		low="5"
+		high="80"
+		default="16"/>
+	<number
+		id="bombcount"
+		type="spinbutton"
+		args="-bombcount %"
+		_label="Bomb Count"
+		low="5"
+		high="6391"
+		default="99"/> <!-- currently no real way to make the high variable off of the -->
 
-  <!--
-  <video href="https://www.youtube.com/watch?v=lVEi089s1_c"/>
-  don't have a video reference but would be a good idea in the future-->
+	
 
-  <!--
-  <number id="delay" type="slider" arg="-delay %"
-          _label="Frame rate" _low-label="Low" _high-label="High"
-          low="0" high="250000" default="10000"
-          convert="invert"/>
+	<!-- Used for playing the screen saver as a demo
+	<video href="https://www.youtube.com/watch?v=lVEi089s1_c"/>
+	-->
+	<xscreensaver-updater />
 
-  <boolean id="grey" _label="Grey" arg-set="-grey"/>
-
-  <boolean id="showfps" _label="Show frame rate" arg-set="-fps"/>
-  
-  used to update the settings and stuff-->
-  <xscreensaver-updater />
-
-  <_description>
+	<_description>
 Playes MineSweeper
 
 Written by Albert Andrew Spencer; 2017.
-  </_description>
+</_description>
 </screensaver>
