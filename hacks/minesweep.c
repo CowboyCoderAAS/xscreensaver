@@ -99,6 +99,30 @@ static char vlines3_bits[] = { 0x02};
 
 #endif /* DO_STIPPLE */
 
+static enum STATE {
+	NONE = 0, // nothing has happend
+	CLICKED,
+	FLAGGED,
+	BOARDER, // if I am not in the game and just a boarder
+} state;
+
+static typedef struct tile {
+	Bool isBomb;
+	int bombNumber;
+	enum state; // if its clicked flaged or not 
+
+	// XXX the Q flags structure
+} tile;
+
+static typedef struct board {
+	int tileWidth;
+	int tileHeight;
+	int bombCount;
+	int foundCount;
+	
+	tile *grid;
+} board;
+
 struct state { // this puppy holds all the info that will be moved from frame to frame
   Display *dpy;
   Window window;
@@ -110,36 +134,62 @@ struct state { // this puppy holds all the info that will be moved from frame to
   unsigned long fg, bg, pixels [512];
   int npixels;
   int xlim, ylim;
-  Bool grey_p;
   Colormap cmap;
 };
 
 static const char *minesweep_defaults [] = {
-  ".background:	black",
-  ".foreground:	white",
-  "*fpsSolid:	true",
-  "*delay:	10000",
+	".width: 		30",
+	".height: 		16",
+	".bombcount: 	99",
+	".speed: 		500",
 #ifdef HAVE_MOBILE
-  "*ignoreRotation: True",
+	"*ignoreRotation: True",
 #endif
-  0
+	0
 };
 
 static XrmOptionDescRec minesweep_options [] = {
-  { "-delay",		".delay",	XrmoptionSepArg, 0 },
-  { "-grey",		".grey",	XrmoptionNoArg, "True" },
-  { 0, 0, 0, 0 }
+	{"-width",	".width", XrmoptionSepArg, 0},
+	{"-height", ".height", XrmoptionSepArg, 0},
+	{"-bombcount", ".bombcount", XrmoptionSepArg, 0},
+	{"-speed", ".speed", XrmoptionSepArg, 0},
+	{ 0, 0, 0, 0 } // to terminate the list
 };
 
 // The functions
 
+/*
+ * will be used to create a new board
+ * will randomize were the bombs are
+ */
+static void board_init(struct state *lore)
+{
+	
+}
+
 static void *
 minesweep_init (Display *dpy, Window window)
 {
+	struct state *lore = (struct state *) calloc(1, sizeof(*lore));
+	
+	lore->dpy = dpy;
+	lore->window = window;
+
+	XWindowAttributes atter;
+	XgetWindowAttributes(lore->dpy, lore->window, &atter);
+	
+	lore->xlim = atter.width;
+	lore->ylim = atter.height;
+	lore->cmap = atter.colormap;
+	
+	
+
+	return lore;
+/*
   struct state *st = (struct state *) calloc (1, sizeof(*st));
 # ifdef DO_STIPPLE
   int i;
-# endif /* DO_STIPPLE */
+# endif // DO_STIPPLE 
   XGCValues gcv;
   XWindowAttributes xgwa;
   st->dpy = dpy;
@@ -159,10 +209,10 @@ minesweep_init (Display *dpy, Window window)
 
 # ifndef DO_STIPPLE
   st->gc = XCreateGC (st->dpy, st->window, GCForeground, &gcv);
-#  ifdef HAVE_JWXYZ /* allow non-opaque alpha components in pixel values */
+#  ifdef HAVE_JWXYZ // allow non-opaque alpha components in pixel values
   jwxyz_XSetAlphaAllowed (st->dpy, st->gc, True);
-#  endif /* HAVE_JWXYZ */
-# else /* DO_STIPPLE */
+#  endif // HAVE_JWXYZ 
+# else // DO_STIPPLE 
   gcv.fill_style= FillOpaqueStippled;
   st->gc = XCreateGC (st->dpy, st->window, GCForeground|GCBackground|GCFillStyle, &gcv);
   
@@ -183,8 +233,9 @@ minesweep_init (Display *dpy, Window window)
   BITS (root_weave_bits, root_weave_width, root_weave_height);
   BITS (vlines2_bits, vlines2_width, vlines2_height);
   BITS (vlines3_bits, vlines3_width, vlines3_height);
-# endif /* DO_STIPPLE */
+# endif // DO_STIPPLE 
   return st;
+  */
 }
 
 static unsigned long

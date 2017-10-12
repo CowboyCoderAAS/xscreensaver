@@ -7,7 +7,7 @@
 	<number 
 		id="width" 
 		type="spinbutton" 
-		args="-width %" 
+		arg="-width %" 
 		_label="Width"
 		low="5"
 		high="80"
@@ -15,7 +15,7 @@
 	<number 
 		id="height" 
 		type="spinbutton" 
-		args="-height %" 
+		arg="-height %" 
 		_label="Height"
 		low="5"
 		high="80"
@@ -23,13 +23,22 @@
 	<number
 		id="bombcount"
 		type="spinbutton"
-		args="-bombcount %"
+		arg="-bombcount %"
 		_label="Bomb Count"
 		low="5"
 		high="6391"
 		default="99"/> <!-- currently no real way to make the high variable off of the -->
-
-	
+	<number
+		id="speed"
+		type="slider"
+		arg="-speed %"
+		_label="Game Speed"
+		_low-label="Slow"
+		_high-lable="Fast"
+		low="100"
+		high="1000"
+		default="500"
+		/>
 
 	<!-- Used for playing the screen saver as a demo
 	<video href="https://www.youtube.com/watch?v=lVEi089s1_c"/>
