@@ -71,6 +71,8 @@ static unsigned char dimple3_bits[] = {
    0x11, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 */ // might need these later or the basic idea to create effects and bevles
 
+#define LOAD_FACTOR .5
+#define INITAL_SIZE 250
 
 #define flipped_gray_width  4
 #define flipped_gray_height 2
@@ -99,6 +101,10 @@ static char vlines3_bits[] = { 0x02};
 
 #endif /* DO_STIPPLE */
 
+// MACROS
+
+#define POS(y, x, w) y*w+x
+
 static enum STATE {
 	NONE = 0, // nothing has happend
 	CLICKED,
@@ -106,14 +112,50 @@ static enum STATE {
 	BOARDER, // if I am not in the game and just a boarder
 } state;
 
+static enum MOVE { // describes the type of move availabe 
+	NONE = 0,
+	FLAG, // I can be flaged
+	CLICK, 
+} move;
+
+static typedef struct qFlag { // produces the logic of how I make moves or not
+	int flagCount;
+	int unclicked; // number of tiles that are unclicked
+} qFlag;
+
 static typedef struct tile {
 	Bool isBomb;
 	int bombNumber;
 	enum state; // if its clicked flaged or not 
-
-	// XXX the Q flags structure
+	enum move; // if I am capable of doing a move
+	
+	int y; // the position it is in the grid
+	int x;
+	int width; // needed for calculating stuff
+	
+	// the Q flags structure, only becomes relevent when tile is clicked
+	int flagCount; 
+	int unclicked; 
 } tile;
 
+// used by the hash set to contain the links
+static typedef struct bucket {
+	tile *data;
+	struct bucket *next;
+} bucket;
+
+// a hash set used for tiles
+static typedef struct hashset {
+	tile *list;
+	size_t size;
+	size_t elements;
+	size_t startElement;
+} hashset;
+
+/*
+ * holds everything I have an interest in playing the minesweep game besides drawing it
+ * using the old trick of tileWidth+2 and tileHeight+2 to create a boarder
+ */
 static typedef struct board {
 	int tileWidth;
 	int tileHeight;
@@ -121,6 +163,10 @@ static typedef struct board {
 	int foundCount;
 	
 	tile *grid;
+	
+	hashset *moveSet; // holds the moves that I am able to make in the game
+
+	int firstY, firstX; // the first moves that will be made, -1 if I have already made a first move
 } board;
 
 struct state { // this puppy holds all the info that will be moved from frame to frame
@@ -130,13 +176,16 @@ struct state { // this puppy holds all the info that will be moved from frame to
   Pixmap pixmaps [NBITS];
 
   GC gc;
-  int delay;
+  int speed; // how fast I am playing the game
   unsigned long fg, bg, pixels [512];
   int npixels;
   int xlim, ylim;
   Colormap cmap;
+
+  board game;
 };
 
+// the options 
 static const char *minesweep_defaults [] = {
 	".width: 		30",
 	".height: 		16",
@@ -158,13 +207,121 @@ static XrmOptionDescRec minesweep_options [] = {
 
 // The functions
 
+static int
+hashset_empty(hashset *set)
+{
+	return set->elements==0;
+}
+
+// basic hash function I gots from stack overflow
+static unsigned int 
+hash(unsigned int n)
+{
+	n = ((n>>16)^n)*0x45d9f3b;
+	n = ((n>>16)^n)*0x45d9f3b;
+	n = (n>>16)^n;
+	return n;
+}
+
+/*
+ * will pop the first element on the set and remove it
+ * returns null if the set is empty
+ */
+static tile *
+hashset_pop(hashset *set)
+{
+	if(hashset_empty(set)) return NULL;
+	int i;
+	for(int i=0; i<set->size; i++)
+	{
+		bucket *temp = set->list[(i+set->startElement)%set->size];
+		if(temp)
+		{
+			tile *result = temp->data;
+			set->list[(i+set->startElement)%set->size] = temp->next;
+			free(temp);
+			set->startElement = (i+set->startElement)%set->size;
+			break;
+		}
+	}
+	// XXX should never reach this part of the code, means a bug, ya bade code design
+	return NULL;
+}
+
+static hashset *
+hashset_add(hashset *set, tile *value)
+{
+	size_t place = (size_t) hash(POS(value->y, value->x, value->w));
+	int noDupe = 1; // I assume there is no duplicate, if there is I switch this off
+	bucket *ted = set->list[place];
+	int n = POS(value->y, value->x, value->width);
+	while(ted) // iterate until I find a duplicate or run out
+	{
+		if(n==POS(ted->data->y, ted->data->x, ted->data->width))
+		{ // there was a duplicate based off of there position value
+			noDupe = 0;
+			break;
+		}
+		ted = ted->next;
+	}
+	if(noDupe)
+	{
+		bucket *holder = (bucket *) malloc(sizeof(bucket));
+		holder->data = value;
+		holder->next = set->list[place];
+		set->list[place]; = holder;
+		set->elements++;
+		if(place<set->startElement) set->startElement = place;
+		if((double)(set->elements/(double)set->size)>=LOAD_FACTOR) return hashset_rehash(set);
+	}
+	return set;
+}
+
+static hashset * // XXX could be more effenent with malloc and free's
+hashset_rehash(hashset *old)
+{
+	hashset *set = hashset_init(old->size*2);
+	while(!hashset_empty(old)) hashset_add(set, hashset_pop(set));
+	return set;
+}
+
+static hashset *
+hashset_init(size_t startSize)
+{
+	hashset *set = (hashset *) malloc(sizeof(hashset));
+	set->size = startSize;
+	set->startElement = startSize-1; // so that I am garenteed to get a minimum
+	set->elements = 0;
+	set->list = (tile *) malloc(sizeof(tile)*(set->size+1));
+	memset(set->list, 0, sizeof(tile)*(set->size+1));
+	return set;
+}
+
 /*
  * will be used to create a new board
  * will randomize were the bombs are
  */
-static void board_init(struct state *lore)
+static void 
+board_init(board *game)
 {
+	game->grid = malloc(sizeof(tile)*((game->tileWidth+2)*(game->tileHeight+2)));
 	
+	
+}
+
+/*
+ * Called in between games
+ * will re-initalize the board
+ * clearing flags and stuff
+ * 
+ * calls board init aftarwards
+ */
+static void
+board_clear(board *game)
+{
+	// TODO write code here
+	
+	board_init(game);
 }
 
 static void *
@@ -182,7 +339,12 @@ minesweep_init (Display *dpy, Window window)
 	lore->ylim = atter.height;
 	lore->cmap = atter.colormap;
 	
-	
+	lore->board.tileWidth = get_integer_resource(lore->dsp, "width", "Integer");
+	lore->board.tileHeight = get_integer_resource(lore->dsp, "height", "Integer");
+	lore->board.bombCount = get_integer_resource(lore->dsp, "bombcount", "Integer");
+	lore->speed = get_integer_resource(lore->dsp, "speed", "Integer");
+
+	board_init(&lore->game);
 
 	return lore;
 /*
