@@ -103,6 +103,10 @@ static char vlines3_bits[] = { 0x02};
 /* MACROS */
 
 #define POS(y, x, w) y*w+x
+#define GETPOS(y, x, w, p) 	{ \
+	y = (int)p/w; \
+	x = p%w; \
+							}
 
 static enum STATE {
 	NONE = 0, /* nothing has happend */
@@ -125,7 +129,7 @@ static struct tile {
 	
 	int y; /* the position it is in the grid */
 	int x;
-	int width; /* needed for calculating stuff */
+	int w;
 	
 	/* the Q flags structure, only becomes relevent when tile is clicked */
 	int flagCount; 
@@ -151,8 +155,10 @@ static struct hashset {
  * using the old trick of tileWidth+2 and tileHeight+2 to create a boarder
  */
 static struct board {
-	int tileWidth;
+	int tileWidth; /* the actual tiles that I am working with */
 	int tileHeight;
+	int bwidth; /* this is tileWidth+2 */
+	int bheight; 
 	int bombCount;
 	int foundCount;
 	
@@ -199,7 +205,7 @@ static XrmOptionDescRec minesweep_options [] = {
 	{ 0, 0, 0, 0 } /* to terminate the list */
 };
 
-/* The functions */
+/*** hashset functions ***/
 
 static int
 hashset_empty(struct hashset *set)
@@ -255,6 +261,14 @@ hashset_init(size_t startSize)
 	return set;
 }
 
+static void
+hashset_free(struct hashset *set)
+{
+	while(!hashset_empty(set)) hashset_pop(set);
+	free(set->list);
+	free(set);
+}
+
 static struct hashset *hashset_add(struct hashset *set, struct tile *value);
 
 static struct hashset * /* XXX could be more effenent with malloc and free's */
@@ -268,13 +282,13 @@ hashset_rehash(struct hashset *old)
 static struct hashset *
 hashset_add(struct hashset *set, struct tile *value)
 {
-	size_t place = (size_t) hash(POS(value->y, value->x, value->width));
+	int n = POS(value->y, value->x, value->w);
+	size_t place = (size_t) hash(n);
 	int noDupe = 1; /* I assume there is no duplicate, if there is I switch this off */
 	struct bucket *ted = set->list[place];
-	int n = POS(value->y, value->x, value->width);
 	while(ted) /* iterate until I find a duplicate or run out */
 	{
-		if(n==POS(ted->data->y, ted->data->x, ted->data->width))
+		if(n==POS(ted->data->y, ted->data->x, ted->data->w))
 		{ /* there was a duplicate based off of there position value */
 			noDupe = 0;
 			break;
@@ -294,16 +308,139 @@ hashset_add(struct hashset *set, struct tile *value)
 	return set;
 }
 
+/* returns 0 if it does not contain, 1 if it does contain */
+static int
+hashset_contains(struct hashset *set, struct tile *value)
+{
+	int n = POS(value->y, value->x, value->w);
+	size_t place = (size_t) hash(n);
+	struct bucket *ted = set->list[place];
+	while(ted)
+		if(n==POS(ted->data->y, ted->data->x, ted->data->w)) return 1; /* found */
+	return 0;
+}
+
+/* *** initalizing functions ***/
+
+static void
+init_tile(struct tile *t, int y, int x, int w, int state)
+{
+	t->y = y;
+	t->x = x;
+	t->w = w;
+	t->state = state;
+}
+
+static void
+board_init_grid(struct board *game)
+{
+	int i;
+	int j;
+	game->grid = malloc(sizeof(tile)*(game->bwidth*game->bheight));
+	memset(game->grid, 0, sizeof(tile)*(game->bwidth*game->bheight));
+	/* setting up the boarder tiles */
+	for(i=0; i<game->bwidth; i++) 
+	{
+		init_tile(&game->grid[POS(0, i, game->bwidth)], 0, i, game->bwidth,  BOARDER);
+		init_tile(&game->grid[POS(game->bheight-1, i, game->bwidth)], 
+				game->bheight-1, i, game->bwidth, BOARDER);
+	}
+	for(i=1; i<game->bheight-1; i++)
+	{
+		init_tile(&game->grid[POS(i, 0, game->bwidth)], i, 0, game->bwidth, BOARDER);
+		init_tile(&game->grid[POS(i, game->bwidth-1, game->bwidth)], 
+				i, game->bwidth-1, game->bwidth, BOARDER);
+	}
+	/* initing the full grid now */
+	for(i=1; i<=game->tileHeight; i++) for(j=1; j<=game->tileWidth; j++)
+	{
+		init_tile(&game->grid[POS(i, j, game->bwidth)], i, j, game->bwidth, NONE);
+	}
+}
+
+/*
+ * initalizes the first click
+ * this will be used when initing the bombs
+ * also adds the first click to the move set
+ */
+static void
+board_init_firstClick(struct board *game)
+{
+	int position;
+	struct tile *temp;
+	int fullLength = game->bwidth*game->bheight;
+	do
+	{
+		position = random() % fullLength;
+		game->firstX = position%game->bwidth;
+		game->firstY = (int)position/game->bwidth;
+	} while(game->grid[POS(game->firstY, game->firstX, game->bwidth)].state!=BOARDER);
+	game->moveSet = hashset_init(INITAL_SIZE);
+	temp = &game->grid[POS(game->firstY, game->firstX, game->bwidth)];
+	temp->move = CLICK;
+	hashset_add(game->moveSet, temp);
+}
+
+static void
+board_init_bombs(struct board *game)
+{
+	int i;
+	int j;
+	int position;
+	int fullLength = game->bwidth*game->bheight;
+	int madeCount = 0;
+	struct hashset *used = hashset_init(INITAL_SIZE); /* what I have already placed a bomb in */
+	for(i=-1; i<=1; i++) for(j=-1; j<=1; j++)
+	{
+		hashset_add(used, &game->grid[POS(game->firstY+i, game->firstX+j, game->bwidth)]);
+	}
+	/* now go through and start adding bombs */
+	while(madeCount < game->bombCount)
+	{
+		position = random() % fullLength;
+		if(!hashset_contains(used, &game->grid[position]) && game->grid[position].state!=BOARDER
+				&& !game->grid[position].isBomb)
+		{
+			game->grid[position].isBomb = True;
+			madeCount++;
+		}
+	}
+	hashset_free(used);
+}
+
+static void
+board_init_bombNumber(struct board *game)
+{
+	int i;
+	int j;
+	int y;
+	int x;
+	int count;
+	for(i=1; i<=game->tileHeight; i++) for(j=1; j<=game->tileWidth; j++)
+	{
+		if(game->grid[POS(i, j, game->bwidth)].isBomb) continue; /* don't count bombs */
+		count = 0;
+		for(y=-1; y<=1; y++) for(x=-1; x<=1; x++)
+		{
+			if(game->grid[POS(i+y, j+x, game->bwidth)].isBomb) count++;
+		}
+		game->grid[POS(i, j, game->bwidth)].bombNumber = count;
+	}
+}
+
 /*
  * will be used to create a new board
  * will randomize were the bombs are
+ * thought I'd try somthing different and made a bunch of individule functions
+ * instead of making a bloated function with all of it inside
  */
 static void 
 board_init(struct board *game)
 {
-	game->grid = malloc(sizeof(tile)*((game->tileWidth+2)*(game->tileHeight+2)));
-	
-	
+	board_init_grid(game);
+	board_init_firstClick(game);
+	board_init_bombs(game);
+	board_init_bombNumber(game);
 }
 
 /*
@@ -316,13 +453,16 @@ board_init(struct board *game)
 static void
 board_clear(struct board *game)
 {
-	/* TODO write code here */
-	
+	hashset_free(game->moveSet);
+	free(game->grid);
+	game->foundCount = 0;
+	game->firstY = 0;
+	game->firstX = 0;
 	board_init(game);
 }
 
 static void *
-minesweep_init (Display *dpy, Window window)
+minesweep_init(Display *dpy, Window window)
 {
 	XWindowAttributes atter;
 	struct state *lore = (struct state *) calloc(1, sizeof(*lore));
@@ -338,6 +478,8 @@ minesweep_init (Display *dpy, Window window)
 	
 	lore->game.tileWidth = get_integer_resource(lore->dsp, "width", "Integer");
 	lore->game.tileHeight = get_integer_resource(lore->dsp, "height", "Integer");
+	lore->game.bwidth = lore->game.tileWidth+2;
+	lore->game.bheight = lore->game.tileHeight+2;
 	lore->game.bombCount = get_integer_resource(lore->dsp, "bombcount", "Integer");
 	lore->speed = get_integer_resource(lore->dsp, "speed", "Integer");
 
@@ -350,23 +492,23 @@ static unsigned long
 minesweep_draw(Display *dpy, Window window, void *closure)
 {
 	struct state *lore = (struct state *) closure;
-
 	return lore->speed;
 }
 
 
 
 static void
-minesweep_reshape (Display *dpy, Window window, void *closure, unsigned int w, unsigned int h)
+minesweep_reshape (Display *dsp, Window window, void *closure, unsigned int w, unsigned int h)
 {
-
+	struct state *lore = (struct state *) closure;
+	lore->xlim = w;
+	lore->ylim = h;
 }
 
 static Bool
 minesweep_event (Display *dpy, Window window, void *closure, XEvent *event)
 {
-	size_t filler;
-	state=0;
+	state=0; /* I really wanted to suppress some warnings so I'm doing some odd jobs here */
 	move=0;
 	board.firstY = -1;
 	return False;
@@ -381,4 +523,3 @@ minesweep_free (Display *dpy, Window window, void *closure)
 }
 
 XSCREENSAVER_MODULE ("MineSweep", minesweep)
-
