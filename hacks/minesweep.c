@@ -42,6 +42,7 @@
  * # include <X11/bitmaps/vlines3>
 */
 
+/*
 #ifdef DO_STIPPLE
 #define stipple_width  16
 #define stipple_height 4
@@ -68,11 +69,11 @@ static unsigned char dimple3_bits[] = {
    0x11, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11, 0x11, 0x00, 0x00,
    0x00, 0x00, 0x00, 0x00, 0x11, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
    0x11, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+*/
 /* might need these later or the basic idea to create effects and bevles */
 
-#define LOAD_FACTOR .5
-#define INITAL_SIZE 250
 
+/*
 #define flipped_gray_width  4
 #define flipped_gray_height 2
 static char flipped_gray_bits[] = { 0x07, 0x0d};
@@ -97,8 +98,12 @@ static char vlines2_bits[] = { 0x01};
 #define vlines3_width  3
 #define vlines3_height 1
 static char vlines3_bits[] = { 0x02};
+*/
+/*#endif*/ /* DO_STIPPLE */
 
-#endif /* DO_STIPPLE */
+#define LOAD_FACTOR .5
+#define INITAL_SIZE 250
+#define DEBUG 1
 
 /* MACROS */
 
@@ -155,6 +160,8 @@ static struct hashset {
  * using the old trick of tileWidth+2 and tileHeight+2 to create a boarder
  */
 static struct board {
+	int buffer1; /* XXX corruption occurs unless I have these 2 variables here */
+	int buffer2;
 	int tileWidth; /* the actual tiles that I am working with */
 	int tileHeight;
 	int bwidth; /* this is tileWidth+2 */
@@ -257,7 +264,7 @@ hashset_init(size_t startSize)
 	set->startElement = startSize-1;
 	set->elements = 0;
 	set->list = (struct bucket **) malloc(sizeof(struct bucket *)*(set->size+1));
-	memset(set->list, 0, sizeof(tile)*(set->size+1));
+	memset(set->list, 0, sizeof(struct bucket *)*(set->size+1));
 	return set;
 }
 
@@ -283,7 +290,7 @@ static struct hashset *
 hashset_add(struct hashset *set, struct tile *value)
 {
 	int n = POS(value->y, value->x, value->w);
-	size_t place = (size_t) hash(n);
+	size_t place = (size_t) hash(n)%set->size;
 	int noDupe = 1; /* I assume there is no duplicate, if there is I switch this off */
 	struct bucket *ted = set->list[place];
 	while(ted) /* iterate until I find a duplicate or run out */
@@ -313,7 +320,7 @@ static int
 hashset_contains(struct hashset *set, struct tile *value)
 {
 	int n = POS(value->y, value->x, value->w);
-	size_t place = (size_t) hash(n);
+	size_t place = (size_t) hash(n)%set->size;
 	struct bucket *ted = set->list[place];
 	while(ted)
 		if(n==POS(ted->data->y, ted->data->x, ted->data->w)) return 1; /* found */
@@ -336,8 +343,8 @@ board_init_grid(struct board *game)
 {
 	int i;
 	int j;
-	game->grid = malloc(sizeof(tile)*(game->bwidth*game->bheight));
-	memset(game->grid, 0, sizeof(tile)*(game->bwidth*game->bheight));
+	game->grid = malloc(sizeof(struct tile)*(game->bwidth*game->bheight));
+	memset(game->grid, 0, sizeof(struct tile)*(game->bwidth*game->bheight));
 	/* setting up the boarder tiles */
 	for(i=0; i<game->bwidth; i++) 
 	{
@@ -345,7 +352,7 @@ board_init_grid(struct board *game)
 		init_tile(&game->grid[POS(game->bheight-1, i, game->bwidth)], 
 				game->bheight-1, i, game->bwidth, BOARDER);
 	}
-	for(i=1; i<game->bheight-1; i++)
+	for(i=0; i<game->bheight; i++)
 	{
 		init_tile(&game->grid[POS(i, 0, game->bwidth)], i, 0, game->bwidth, BOARDER);
 		init_tile(&game->grid[POS(i, game->bwidth-1, game->bwidth)], 
@@ -374,7 +381,7 @@ board_init_firstClick(struct board *game)
 		position = random() % fullLength;
 		game->firstX = position%game->bwidth;
 		game->firstY = (int)position/game->bwidth;
-	} while(game->grid[POS(game->firstY, game->firstX, game->bwidth)].state!=BOARDER);
+	} while(game->grid[position].state!=BOARDER);
 	game->moveSet = hashset_init(INITAL_SIZE);
 	temp = &game->grid[POS(game->firstY, game->firstX, game->bwidth)];
 	temp->move = CLICK;
@@ -437,6 +444,9 @@ board_init_bombNumber(struct board *game)
 static void 
 board_init(struct board *game)
 {
+	game->tileWidth = game->bwidth-2;
+	game->tileHeight = game->bheight-2;
+	/*printf("th %d tw %d\n", game->tileWidth, game->tileHeight); */ 
 	board_init_grid(game);
 	board_init_firstClick(game);
 	board_init_bombs(game);
@@ -478,6 +488,7 @@ minesweep_init(Display *dpy, Window window)
 	
 	lore->game.tileWidth = get_integer_resource(lore->dsp, "width", "Integer");
 	lore->game.tileHeight = get_integer_resource(lore->dsp, "height", "Integer");
+	/*printf("tileWidth %d tileHeight %d\n", lore->game.tileWidth, lore->game.tileHeight); */
 	lore->game.bwidth = lore->game.tileWidth+2;
 	lore->game.bheight = lore->game.tileHeight+2;
 	lore->game.bombCount = get_integer_resource(lore->dsp, "bombcount", "Integer");
@@ -487,6 +498,14 @@ minesweep_init(Display *dpy, Window window)
 
 	return lore;
 }
+
+/*** GAME PLAY ***/
+
+
+
+/*** DRAWING ***/
+
+
 
 static unsigned long
 minesweep_draw(Display *dpy, Window window, void *closure)
