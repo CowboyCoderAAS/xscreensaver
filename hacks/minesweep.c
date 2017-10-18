@@ -446,7 +446,6 @@ board_init(struct board *game)
 {
 	game->tileWidth = game->bwidth-2;
 	game->tileHeight = game->bheight-2;
-	/*printf("th %d tw %d\n", game->tileWidth, game->tileHeight); */ 
 	board_init_grid(game);
 	board_init_firstClick(game);
 	board_init_bombs(game);
@@ -488,11 +487,14 @@ minesweep_init(Display *dpy, Window window)
 	
 	lore->game.tileWidth = get_integer_resource(lore->dsp, "width", "Integer");
 	lore->game.tileHeight = get_integer_resource(lore->dsp, "height", "Integer");
-	/*printf("tileWidth %d tileHeight %d\n", lore->game.tileWidth, lore->game.tileHeight); */
 	lore->game.bwidth = lore->game.tileWidth+2;
 	lore->game.bheight = lore->game.tileHeight+2;
 	lore->game.bombCount = get_integer_resource(lore->dsp, "bombcount", "Integer");
 	lore->speed = get_integer_resource(lore->dsp, "speed", "Integer");
+	if(lore->game.tileWidth*lore->game.tileHeight>=lore->game.bombCount-9)
+	{ /* not enough space for bombs exiting XXX make it revert to default */
+		exit(1);
+	}
 
 	board_init(&lore->game);
 
@@ -517,7 +519,7 @@ minesweep_draw(Display *dpy, Window window, void *closure)
 
 
 static void
-minesweep_reshape (Display *dsp, Window window, void *closure, unsigned int w, unsigned int h)
+minesweep_reshape(Display *dsp, Window window, void *closure, unsigned int w, unsigned int h)
 {
 	struct state *lore = (struct state *) closure;
 	lore->xlim = w;
@@ -525,7 +527,7 @@ minesweep_reshape (Display *dsp, Window window, void *closure, unsigned int w, u
 }
 
 static Bool
-minesweep_event (Display *dpy, Window window, void *closure, XEvent *event)
+minesweep_event(Display *dpy, Window window, void *closure, XEvent *event)
 {
 	state=0; /* I really wanted to suppress some warnings so I'm doing some odd jobs here */
 	move=0;
@@ -537,8 +539,8 @@ static void
 minesweep_free (Display *dpy, Window window, void *closure)
 {
   struct state *st = (struct state *) closure;
-  XFreeGC (st->dsp, st->gc);
-  free (st);
+  XFreeGC(st->dsp, st->gc);
+  free(st);
 }
 
 XSCREENSAVER_MODULE ("MineSweep", minesweep)
