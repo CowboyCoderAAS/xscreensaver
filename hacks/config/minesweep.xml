@@ -36,8 +36,8 @@
 		_low-label="Slow"
 		_high-lable="Fast"
 		low="100"
-		high="1000"
-		default="500"
+		high="100000"
+		default="10000"
 		/>
 
 	<!-- Used for playing the screen saver as a demo

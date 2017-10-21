@@ -103,6 +103,7 @@ static char vlines3_bits[] = { 0x02};
 
 #define LOAD_FACTOR .5
 #define INITAL_SIZE 250
+#define GRID_BOARDER 0
 #define DEBUG 1
 
 /* MACROS */
@@ -125,6 +126,21 @@ static enum MOVE { /* describes the type of move availabe */
 	FLAG, /* I can be flaged */
 	CLICK 
 } move;
+
+static enum GRID_COLOR {
+	GRID_ZERO = 0,
+	GRID_ONE,
+	GRID_TWO,
+	GRID_THREE,
+	GRID_FOUR,
+	GRID_FIVE,
+	GRID_SIX,
+	GRID_SEVEN,
+	GRID_EIGHT,
+	GRID_UNCLICKED,
+	GRID_FLAG,
+	GRID_BOMB	
+} grid_color;
 
 static struct tile {
 	Bool isBomb;
@@ -155,6 +171,11 @@ static struct hashset {
 	size_t startElement;
 } hashset;
 
+static struct queue {
+	struct bucket *front;
+	size_t size;
+} queue;
+
 /*
  * holds everything I have an interest in playing the minesweep game besides drawing it
  * using the old trick of tileWidth+2 and tileHeight+2 to create a boarder
@@ -172,32 +193,34 @@ static struct board {
 	struct tile *grid;
 	
 	struct hashset *moveSet; /* holds the moves that I am able to make in the game */
+	struct queue *displayQueue; /* lets me know what tiles need updating */
 
 	int firstY, firstX; /* the first moves that will be made,-1 if I have already made a first move*/
+
 } board;
 
 struct state { /* this puppy holds all the info that will be moved from frame to frame */
-  Display *dsp;
-  Window window;
+	Display *dsp;
+	Window window;
+	Window gridWindow;
 
-  Pixmap pixmaps [NBITS];
-
-  GC gc;
-  int speed; /* how fast I am playing the game */
-  unsigned long fg, bg, pixels [512];
-  int npixels;
-  int xlim, ylim;
-  Colormap cmap;
-
-  struct board game;
+	GC gc;
+	Colormap cmap;
+	int speed; /* how fast I am playing the game */
+	int xlim, ylim;
+	int wh;
+	XColor red;
+	struct board game;
 };
 
 /* the options */
 static const char *minesweep_defaults [] = {
+	".background:	black",
+	".foreground:	white",
 	".width: 		30",
 	".height: 		16",
 	".bombcount: 	99",
-	".speed: 		1000",
+	"*speed: 		10000",
 #ifdef HAVE_MOBILE
 	"*ignoreRotation: True",
 #endif
@@ -211,6 +234,55 @@ static XrmOptionDescRec minesweep_options [] = {
 	{"-speed", ".speed", XrmoptionSepArg, 0},
 	{ 0, 0, 0, 0 } /* to terminate the list */
 };
+
+/*** queue functions ***/
+static struct queue *
+queue_init(void)
+{
+	struct queue *result = (struct queue *) malloc(sizeof(struct queue));
+	memset(result, 0, sizeof(struct queue));
+	return result;
+}
+
+static void
+queue_add(struct queue *qu, struct tile *value)
+{
+	struct bucket *ted = (struct bucket *) malloc(sizeof(struct bucket));
+	ted->data = value;
+	ted->next = qu->front;
+	qu->front = ted->next;
+	qu->size++;
+}
+
+static struct tile *
+queue_pop(struct queue *qu)
+{
+	struct tile *result;
+	struct bucket *temp;
+	if(!qu->size) return NULL;
+	result = qu->front->data;
+	temp = qu->front;
+	qu->front = qu->front->next;
+	free(temp);
+	qu->size--;
+	return result;
+}
+
+static void
+queue_free(struct queue *qu)
+{
+	while(qu->size) queue_pop(qu);
+	free(qu);
+}
+
+/*
+ * returns true if queue is empty false otherwise
+ */
+static Bool
+queue_empty(struct queue *qu)
+{
+	return !qu->size;
+}
 
 /*** hashset functions ***/
 
@@ -250,6 +322,7 @@ hashset_pop(struct hashset *set)
 			set->list[(i+set->startElement)%set->size] = temp->next;
 			free(temp);
 			set->startElement = (i+set->startElement)%set->size;
+			set->elements--;
 			break;
 		}
 	}
@@ -310,7 +383,8 @@ hashset_add(struct hashset *set, struct tile *value)
 		set->list[place] = holder;
 		set->elements++;
 		if(place<set->startElement) set->startElement = place;
-		if((double)(set->elements/(double)set->size)>=LOAD_FACTOR) return hashset_rehash(set);
+		if((double)(set->elements/(double)set->size)>=LOAD_FACTOR) 
+			return hashset_rehash(set);
 	}
 	return set;
 }
@@ -323,7 +397,13 @@ hashset_contains(struct hashset *set, struct tile *value)
 	size_t place = (size_t) hash(n)%set->size;
 	struct bucket *ted = set->list[place];
 	while(ted)
-		if(n==POS(ted->data->y, ted->data->x, ted->data->w)) return 1; /* found */
+	{
+		if(n==POS(ted->data->y, ted->data->x, ted->data->w)) 
+		{
+			return 1; /* found */
+		}
+		ted = ted->next;
+	}
 	return 0;
 }
 
@@ -405,7 +485,8 @@ board_init_bombs(struct board *game)
 	while(madeCount < game->bombCount)
 	{
 		position = random() % fullLength;
-		if(!hashset_contains(used, &game->grid[position]) && game->grid[position].state!=BOARDER
+		if(!hashset_contains(used, &game->grid[position]) 
+				&& game->grid[position].state!=BOARDER
 				&& !game->grid[position].isBomb)
 		{
 			game->grid[position].isBomb = True;
@@ -444,12 +525,17 @@ board_init_bombNumber(struct board *game)
 static void 
 board_init(struct board *game)
 {
-	game->tileWidth = game->bwidth-2;
+	game->tileWidth = game->bwidth-2; /* TODO test if I need this any more */
 	game->tileHeight = game->bheight-2;
 	board_init_grid(game);
+	printf("finished init grid\n");
 	board_init_firstClick(game);
+	printf("finished first click\n");
 	board_init_bombs(game);
+	printf("finisehd init bobm\n");
 	board_init_bombNumber(game);
+	printf("finishedBombNumber\n");
+	game->displayQueue = queue_init();
 }
 
 /*
@@ -463,6 +549,7 @@ static void
 board_clear(struct board *game)
 {
 	hashset_free(game->moveSet);
+	queue_free(game->displayQueue);
 	free(game->grid);
 	game->foundCount = 0;
 	game->firstY = 0;
@@ -473,7 +560,9 @@ board_clear(struct board *game)
 static void *
 minesweep_init(Display *dpy, Window window)
 {
+	int heightOffset, widthOffset;
 	XWindowAttributes atter;
+	XGCValues value;
 	struct state *lore = (struct state *) calloc(1, sizeof(*lore));
 	
 	lore->dsp = dpy;
@@ -491,13 +580,35 @@ minesweep_init(Display *dpy, Window window)
 	lore->game.bheight = lore->game.tileHeight+2;
 	lore->game.bombCount = get_integer_resource(lore->dsp, "bombcount", "Integer");
 	lore->speed = get_integer_resource(lore->dsp, "speed", "Integer");
-	if(lore->game.tileWidth*lore->game.tileHeight>=lore->game.bombCount-9)
-	{ /* not enough space for bombs exiting XXX make it revert to default */
-		exit(1);
-	}
+	printf("tWidth %d tHeight %d bwidth %d bheight %d bombCount %d speed %d",
+			lore->game.tileWidth, lore->game.tileHeight, lore->game.bwidth, 
+			lore->game.bheight, lore->game.bombCount, lore->speed);
 
 	board_init(&lore->game);
+	
+	lore->wh = (lore->xlim)/lore->game.tileWidth; 
+	if(lore->wh>(lore->ylim)/lore->game.tileHeight) 
+		lore->wh = (lore->ylim)/lore->game.tileHeight;
+	heightOffset = (lore->ylim-lore->wh*lore->game.tileHeight)/2;
+	widthOffset = (lore->xlim-lore->wh*lore->game.tileWidth)/2;
+	lore->gridWindow = XCreateWindow(lore->dsp, lore->window, widthOffset, heightOffset, 
+			lore->xlim*lore->game.tileWidth, lore->ylim*lore->game.tileHeight,
+			GRID_BOARDER, CopyFromParent, CopyFromParent, CopyFromParent, 0, 0);
+	XMapWindow(lore->dsp, lore->gridWindow);
 
+	if(lore->game.tileWidth*lore->game.tileHeight>=lore->game.bombCount-9)
+	{ /* not enough space for bombs exiting XXX make it revert to default */
+		/*fprintf(stderr, "exiting cause I can\n");
+		exit(1);*/
+		printf("tileWidth %d tileHight %d\n", lore->game.tileWidth, lore->game.tileHeight);
+	}
+	value.foreground = get_pixel_resource(lore->dsp, lore->cmap, "foreground", "Foreground");
+	value.background = get_pixel_resource(lore->dsp, lore->cmap, "background", "Background");
+	value.fill_style = FillSolid;
+	lore->gc = XCreateGC(lore->dsp, lore->window, GCForeground|GCBackground|GCFillStyle, &value);
+	
+
+	printf("finished init\n");
 	return lore;
 }
 
@@ -507,12 +618,124 @@ minesweep_init(Display *dpy, Window window)
 
 /*** DRAWING ***/
 
+static void
+updateGC(Display *dsp, GC gc, int type)
+{
+	XGCValues value;
+	/*value.foreground = 0xFFFFFF;*/
+	switch(type)
+	{
+		case GRID_UNCLICKED:
+			value.foreground = 0x0000FF;
+			break;
+		case GRID_FLAG:
+			value.foreground = 0xFF0000;
+			break;
+		case GRID_BOMB:
+			value.foreground = 0x800000;
+			break;
+		case GRID_ZERO:
+			value.foreground = 0xFFFFFF;
+			break;
+		case GRID_ONE:
+			value.foreground = 0x1E90FF;
+			break;
+		case GRID_TWO:
+			value.foreground = 0x008000;
+			break;
+		case GRID_THREE:
+			value.foreground = 0xFA8072;
+			break;
+		case GRID_FOUR:
+			value.foreground = 0xFF8C00;
+			break;
+		case GRID_FIVE:
+			value.foreground = 0x8B4513;
+			break;
+		case GRID_SIX:
+			value.foreground = 0xFF00FF;
+			break;
+		case GRID_SEVEN:
+			value.foreground = 0x00FFFF;
+			break;
+		case GRID_EIGHT:
+			value.foreground = 0x696969;
+			break;
+	}
+	XChangeGC(dsp, gc, GCBackground|GCForeground, &value);
+}
 
+static void 
+draw_boarder(Display *dsp, Window window, GC gc, unsigned wh, struct tile *data)
+{
+	XGCValues value;
+	value.foreground = 0x000000;
+	XChangeGC(dsp, gc, GCForeground, &value);
+	XDrawRectangle(dsp, window, gc, (data->x-1)*wh, (data->y-1)*wh, wh, wh);
+}
+
+static void
+draw_tile(Display *dsp, Window window, GC gc, 
+		unsigned wh, struct tile *data)
+{
+	if(data->state == BOARDER) return;
+	if(data->state == NONE)
+	{
+		updateGC(dsp, gc, GRID_UNCLICKED);
+		XFillRectangle(dsp, window, gc, (data->x-1)*wh, (data->y-1)*wh,
+				wh, wh);
+	} 
+	else if(data->state == CLICKED)
+	{
+		if(data->isBomb)
+		{
+			updateGC(dsp, gc, GRID_BOMB);
+			XFillRectangle(dsp, window, gc, (data->x-1)*wh, (data->y-1)*wh,
+				wh, wh);
+
+		} 
+		else 
+		{
+			updateGC(dsp, gc, data->bombNumber);
+			XFillRectangle(dsp, window, gc, (data->x-1)*wh, (data->y-1)*wh,
+				wh, wh);
+		}
+	} 
+	else /* I have a flagged tile */
+	{
+		updateGC(dsp, gc, GRID_FLAG);
+		XFillRectangle(dsp, window, gc, (data->x-1)*wh, (data->y-1)*wh,
+				wh, wh);
+	}
+	draw_boarder(dsp, window, gc, wh, data);
+}
+	
+static void
+draw_grid(struct state *lore)
+{
+	int i;
+	int totalLength = lore->game.bwidth*lore->game.bheight;
+	if(queue_empty(lore->game.displayQueue)) /* empty queue display all */
+	{
+		for(i=0; i<totalLength; i++) /* TODO could be more effetient */
+		{
+			draw_tile(lore->dsp, lore->gridWindow, lore->gc, lore->wh, 
+					&lore->game.grid[i]);
+		}
+	} 
+	else while(!queue_empty(lore->game.displayQueue))
+	{
+		draw_tile(lore->dsp, lore->gridWindow, lore->gc, lore->wh, 
+				queue_pop(lore->game.displayQueue));
+	}
+}
 
 static unsigned long
-minesweep_draw(Display *dpy, Window window, void *closure)
+minesweep_draw(Display *dsp, Window window, void *closure)
 {
 	struct state *lore = (struct state *) closure;
+	/* TODO make the move */
+	draw_grid(lore); 
 	return lore->speed;
 }
 
@@ -521,6 +744,7 @@ minesweep_draw(Display *dpy, Window window, void *closure)
 static void
 minesweep_reshape(Display *dsp, Window window, void *closure, unsigned int w, unsigned int h)
 {
+	/* TODO add more to this */
 	struct state *lore = (struct state *) closure;
 	lore->xlim = w;
 	lore->ylim = h;
@@ -529,9 +753,6 @@ minesweep_reshape(Display *dsp, Window window, void *closure, unsigned int w, un
 static Bool
 minesweep_event(Display *dpy, Window window, void *closure, XEvent *event)
 {
-	state=0; /* I really wanted to suppress some warnings so I'm doing some odd jobs here */
-	move=0;
-	board.firstY = -1;
 	return False;
 }
 
