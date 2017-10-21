@@ -189,6 +189,8 @@ static struct board {
 	int bheight; 
 	int bombCount;
 	int foundCount;
+	int unclicked;
+	int gameOver;
 	
 	struct tile *grid;
 	
@@ -209,7 +211,6 @@ struct state { /* this puppy holds all the info that will be moved from frame to
 	int speed; /* how fast I am playing the game */
 	int xlim, ylim;
 	int wh;
-	XColor red;
 	struct board game;
 };
 
@@ -220,7 +221,7 @@ static const char *minesweep_defaults [] = {
 	".width: 		8",
 	".height: 		8",
 	".bombcount: 	10",
-	"*speed: 		10000",
+	"*speed: 		1000000",
 #ifdef HAVE_MOBILE
 	"*ignoreRotation: True",
 #endif
@@ -241,6 +242,7 @@ queue_init(void)
 {
 	struct queue *result = (struct queue *) malloc(sizeof(struct queue));
 	memset(result, 0, sizeof(struct queue));
+	result->size = 0;
 	return result;
 }
 
@@ -250,7 +252,7 @@ queue_add(struct queue *qu, struct tile *value)
 	struct bucket *ted = (struct bucket *) malloc(sizeof(struct bucket));
 	ted->data = value;
 	ted->next = qu->front;
-	qu->front = ted->next;
+	qu->front = ted;
 	qu->size++;
 }
 
@@ -461,11 +463,12 @@ board_init_firstClick(struct board *game)
 		position = random() % fullLength;
 		game->firstX = position%game->bwidth;
 		game->firstY = (int)position/game->bwidth;
-	} while(game->grid[position].state!=BOARDER);
+	} while(game->grid[position].state==BOARDER);
 	game->moveSet = hashset_init(INITAL_SIZE);
 	temp = &game->grid[POS(game->firstY, game->firstX, game->bwidth)];
 	temp->move = CLICK;
 	hashset_add(game->moveSet, temp);
+	game->unclicked = game->tileWidth*game->tileHeight;
 }
 
 static void
@@ -552,7 +555,7 @@ board_init(struct board *game)
 	printf("finishedBombNumber\n");
 	game->displayQueue = queue_init();
 #if DEBUG
-	board_clickAll(game);
+	/*board_clickAll(game); */
 #endif
 }
 
@@ -572,6 +575,7 @@ board_clear(struct board *game)
 	game->foundCount = 0;
 	game->firstY = 0;
 	game->firstX = 0;
+	game->gameOver = 0;
 	board_init(game);
 }
 
@@ -631,7 +635,128 @@ minesweep_init(Display *dpy, Window window)
 
 /*** GAME PLAY ***/
 
+static void
+update_qflag(struct board *game, struct tile *data)
+{
+	int i, j;
+	data->flagCount = 0;
+	data->unclicked = 0;
+	for(i=-1; i<=1; i++) for(j=-1; j<=1; j++)
+	{
+		struct tile *place = &game->grid[POS((data->y+i), (data->x+j), data->w)];
+		if(place->state==FLAGGED) data->flagCount++;
+		if(place->state==NONE) data->unclicked++;
+	}
+}
 
+static void
+clickMove(struct board *game, int y, int x)
+{
+	int i, j;
+	int place = POS(y, x, game->bwidth);
+	int type = game->grid[place].state;
+	if(type == BOARDER || type == CLICKED || type == FLAGGED) return;
+	game->grid[place].state = CLICKED;
+	game->unclicked--;
+	queue_add(game->displayQueue, &game->grid[place]);
+	if(game->grid[place].bombNumber==0 && !game->grid[place].isBomb)
+	{
+		for(i=-1; i<=1; i++) for(j=-1; j<=1; j++)
+		{
+			clickMove(game, y+i, x+j);
+		}
+	} 
+	else 
+	{
+		if(game->grid[place].isBomb) game->gameOver = 1;
+	}
+}
+
+static void 
+flagMove(struct board *game, struct tile *data)
+{
+	data->state = FLAGGED;
+	game->foundCount++;
+}
+
+/*
+ * If I could make a move then adds it to the move set
+ */ 
+static void
+couldMove(struct board *game, int y, int x)
+{
+	int i, j;
+	struct tile *other;
+	struct tile *place = &game->grid[POS(y, x, game->bwidth)];
+	if(place->state != NONE) return;
+	for(i=-1; i<=1; i++) for(j=-1; j<=1; j++)
+	{
+		other = &game->grid[POS((y+i), (x+j), game->bwidth)];
+		if(other->state != CLICKED) continue;
+		if(other->unclicked == other->bombNumber-other->flagCount)
+		{
+			place->move = FLAG;
+			hashset_add(game->moveSet, place);
+			break;
+		}
+		else if(other->bombNumber - other->flagCount == 0)
+		{
+			place->move = CLICK;
+			hashset_add(game->moveSet, place);
+			break;
+		}
+	}
+}
+
+static void
+playGame(struct board *game)
+{
+	int y, x;
+	struct tile *move;
+	int fullLength;
+	int position;
+	if(!hashset_empty(game->moveSet)) /* I have a move, going to make it */
+	{
+		move = hashset_pop(game->moveSet);
+		if(move->move == CLICK) clickMove(game, move->y, move->x);
+		else flagMove(game, move);
+		move->move = CANT;
+	}
+	else /* re-populate the move set */
+	{
+		printf("out of moves populating move set\n");
+		for(y=1; y<=game->tileHeight; y++) for(x=1; x<=game->tileWidth; x++)
+		{
+			move = &game->grid[POS(y, x, game->bwidth)];
+			if(move->state == CLICKED && move->bombNumber>0)
+				update_qflag(game, move);
+		}
+		for(y=1; y<=game->tileHeight; y++) for(x=1; x<=game->tileWidth; x++)
+		{
+			couldMove(game, y, x);
+		}
+		if(!hashset_empty(game->moveSet))
+		{
+			move = hashset_pop(game->moveSet);
+			if(move->move == CLICK) clickMove(game, move->y, move->x);
+			else flagMove(game, move);
+			move->move = CANT;
+		}
+		else /* time to guess */
+		{
+			printf("time to guess\n");
+			fullLength = game->bwidth*game->bheight;
+			do
+			{
+				position = random() % fullLength;
+				x = position%game->bwidth;
+				y = (int) position/game->bwidth;
+			} while(game->grid[position].state != NONE);
+			printf("guess click move of %d %d\n", y, x);
+			clickMove(game, y, x); /* just guessing here and clicking */
+		}
+	}
+}
 
 /*** DRAWING ***/
 
@@ -699,34 +824,29 @@ draw_tile(Display *dsp, Window window, GC gc,
 	if(data->state == NONE)
 	{
 		updateGC(dsp, gc, GRID_UNCLICKED);
-		XFillRectangle(dsp, window, gc, (data->x-1)*wh, (data->y-1)*wh,
-				wh, wh);
+		XFillRectangle(dsp, window, gc, (data->x-1)*wh, (data->y-1)*wh, wh, wh);
 	} 
 	else if(data->state == CLICKED)
 	{
 		if(data->isBomb)
 		{
 			updateGC(dsp, gc, GRID_BOMB);
-			XFillRectangle(dsp, window, gc, (data->x-1)*wh, (data->y-1)*wh,
-				wh, wh);
-
+			XFillRectangle(dsp, window, gc, (data->x-1)*wh, (data->y-1)*wh, wh, wh);
 		} 
 		else 
 		{
 			updateGC(dsp, gc, data->bombNumber);
-			XFillRectangle(dsp, window, gc, (data->x-1)*wh, (data->y-1)*wh,
-				wh, wh);
+			XFillRectangle(dsp, window, gc, (data->x-1)*wh, (data->y-1)*wh, wh, wh);
 		}
 	} 
 	else /* I have a flagged tile */
 	{
 		updateGC(dsp, gc, GRID_FLAG);
-		XFillRectangle(dsp, window, gc, (data->x-1)*wh, (data->y-1)*wh,
-				wh, wh);
+		XFillRectangle(dsp, window, gc, (data->x-1)*wh, (data->y-1)*wh, wh, wh);
 	}
 	draw_boarder(dsp, window, gc, wh, data);
 }
-	
+
 static void
 draw_grid(struct state *lore)
 {
@@ -742,8 +862,8 @@ draw_grid(struct state *lore)
 	} 
 	else while(!queue_empty(lore->game.displayQueue))
 	{
-		draw_tile(lore->dsp, lore->gridWindow, lore->gc, lore->wh, 
-				queue_pop(lore->game.displayQueue));
+		struct tile *data = queue_pop(lore->game.displayQueue);
+		draw_tile(lore->dsp, lore->gridWindow, lore->gc, lore->wh, data);
 	}
 }
 
@@ -751,8 +871,26 @@ static unsigned long
 minesweep_draw(Display *dsp, Window window, void *closure)
 {
 	struct state *lore = (struct state *) closure;
-	/* TODO make the move */
-	draw_grid(lore); 
+	int temp=0;
+	if(lore->game.firstY >=0)
+	{
+		lore->game.firstY = -1;
+		draw_grid(lore);
+		return lore->speed;
+	}
+	if(lore->game.gameOver || lore->game.unclicked-lore->game.foundCount==0)
+	{
+		if(lore->game.gameOver)
+			temp=1;
+		draw_grid(lore);
+		board_clear(&lore->game);
+		if(temp) return lore->speed*500;
+		return lore->speed*3;
+	}
+
+	playGame(&lore->game);
+	draw_grid(lore);
+
 	return lore->speed;
 }
 
