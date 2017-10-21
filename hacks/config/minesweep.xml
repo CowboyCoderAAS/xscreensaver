@@ -11,7 +11,7 @@
 		_label="Width"
 		low="5"
 		high="80"
-		default="30"/>
+		default="8"/>
 	<number 
 		id="height" 
 		type="spinbutton" 
@@ -19,7 +19,7 @@
 		_label="Height"
 		low="5"
 		high="80"
-		default="16"/>
+		default="8"/>
 	<number
 		id="bombcount"
 		type="spinbutton"
@@ -27,7 +27,7 @@
 		_label="Bomb Count"
 		low="5"
 		high="6391"
-		default="99"/> <!-- currently no real way to make the high variable off of the -->
+		default="10"/> <!-- currently no real way to make the high variable off of the -->
 	<number
 		id="speed"
 		type="slider"

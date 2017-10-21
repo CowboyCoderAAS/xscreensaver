@@ -217,9 +217,9 @@ struct state { /* this puppy holds all the info that will be moved from frame to
 static const char *minesweep_defaults [] = {
 	".background:	black",
 	".foreground:	white",
-	".width: 		30",
-	".height: 		16",
-	".bombcount: 	99",
+	".width: 		8",
+	".height: 		8",
+	".bombcount: 	10",
 	"*speed: 		10000",
 #ifdef HAVE_MOBILE
 	"*ignoreRotation: True",
@@ -429,13 +429,13 @@ board_init_grid(struct board *game)
 	for(i=0; i<game->bwidth; i++) 
 	{
 		init_tile(&game->grid[POS(0, i, game->bwidth)], 0, i, game->bwidth,  BOARDER);
-		init_tile(&game->grid[POS(game->bheight-1, i, game->bwidth)], 
+		init_tile(&game->grid[POS((game->bheight-1), i, game->bwidth)], 
 				game->bheight-1, i, game->bwidth, BOARDER);
 	}
 	for(i=0; i<game->bheight; i++)
 	{
 		init_tile(&game->grid[POS(i, 0, game->bwidth)], i, 0, game->bwidth, BOARDER);
-		init_tile(&game->grid[POS(i, game->bwidth-1, game->bwidth)], 
+		init_tile(&game->grid[POS(i, (game->bwidth-1), game->bwidth)], 
 				i, game->bwidth-1, game->bwidth, BOARDER);
 	}
 	/* initing the full grid now */
@@ -479,7 +479,7 @@ board_init_bombs(struct board *game)
 	struct hashset *used = hashset_init(INITAL_SIZE); /* what I have already placed a bomb in */
 	for(i=-1; i<=1; i++) for(j=-1; j<=1; j++)
 	{
-		hashset_add(used, &game->grid[POS(game->firstY+i, game->firstX+j, game->bwidth)]);
+		hashset_add(used, &game->grid[POS((game->firstY+i), (game->firstX+j), game->bwidth)]);
 	}
 	/* now go through and start adding bombs */
 	while(madeCount < game->bombCount)
@@ -506,15 +506,30 @@ board_init_bombNumber(struct board *game)
 	int count;
 	for(i=1; i<=game->tileHeight; i++) for(j=1; j<=game->tileWidth; j++)
 	{
-		if(game->grid[POS(i, j, game->bwidth)].isBomb) continue; /* don't count bombs */
+		if(game->grid[POS(i, j, game->bwidth)].isBomb) 
+		{
+			continue; /* don't count bombs */
+		}
 		count = 0;
 		for(y=-1; y<=1; y++) for(x=-1; x<=1; x++)
 		{
-			if(game->grid[POS(i+y, j+x, game->bwidth)].isBomb) count++;
+			if(game->grid[POS((i+y), (j+x), game->bwidth)].isBomb) count++;
 		}
 		game->grid[POS(i, j, game->bwidth)].bombNumber = count;
 	}
 }
+
+#if DEBUG
+static void
+board_clickAll(struct board *game)
+{
+	int i, j;
+	for(i=1; i<=game->tileHeight; i++) for(j=1; j<=game->tileWidth; j++)
+	{
+		game->grid[POS(i, j, game->bwidth)].state = CLICKED;
+	}
+}
+#endif
 
 /*
  * will be used to create a new board
@@ -536,6 +551,9 @@ board_init(struct board *game)
 	board_init_bombNumber(game);
 	printf("finishedBombNumber\n");
 	game->displayQueue = queue_init();
+#if DEBUG
+	board_clickAll(game);
+#endif
 }
 
 /*
@@ -606,7 +624,6 @@ minesweep_init(Display *dpy, Window window)
 	value.background = get_pixel_resource(lore->dsp, lore->cmap, "background", "Background");
 	value.fill_style = FillSolid;
 	lore->gc = XCreateGC(lore->dsp, lore->window, GCForeground|GCBackground|GCFillStyle, &value);
-	
 
 	printf("finished init\n");
 	return lore;
