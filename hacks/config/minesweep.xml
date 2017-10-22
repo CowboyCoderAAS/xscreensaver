@@ -39,6 +39,10 @@
 		high="100000"
 		default="10000"
 		/>
+	<boolean id="alwaywin"
+		_label="Will always win"
+		arg-set="-alwayswin"
+		/>
 
 	<!-- Used for playing the screen saver as a demo
 	<video href="https://www.youtube.com/watch?v=lVEi089s1_c"/>

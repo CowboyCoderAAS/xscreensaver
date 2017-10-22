@@ -192,10 +192,13 @@ static struct board {
 	int foundCount;
 	int unclicked;
 	int gameOver;
+	Bool alwaysWin;
 	
 	struct tile *grid;
 	
 	struct hashset *moveSet; /* holds the moves that I am able to make in the game */
+	struct hashset *pmove; /* holds potential moves that will need testing */
+	struct hashset *flagSet; /* to update the qflags */
 	struct queue *displayQueue; /* lets me know what tiles need updating */
 
 	int firstY, firstX; /* the first moves that will be made,-1 if I have already made a first move*/
@@ -219,10 +222,10 @@ struct state { /* this puppy holds all the info that will be moved from frame to
 static const char *minesweep_defaults [] = {
 	".background:	black",
 	".foreground:	white",
-	".width: 		30",
-	".height: 		16",
-	".bombcount: 	99",
-	"*speed: 		10000",
+	".width: 		50",
+	".height: 		50",
+	".bombcount: 	525",
+	"*speed: 		5000",
 #ifdef HAVE_MOBILE
 	"*ignoreRotation: True",
 #endif
@@ -234,6 +237,7 @@ static XrmOptionDescRec minesweep_options [] = {
 	{"-height", ".height", XrmoptionSepArg, 0},
 	{"-bombcount", ".bombcount", XrmoptionSepArg, 0},
 	{"-speed", ".speed", XrmoptionSepArg, 0},
+	{"-alwayswin", ".alwayswin", XrmoptionNoArg},
 	{ 0, 0, 0, 0 } /* to terminate the list */
 };
 
@@ -358,7 +362,7 @@ static struct hashset * /* XXX could be more effenent with malloc and free's */
 hashset_rehash(struct hashset *old)
 {
 	struct hashset *set = hashset_init(old->size*2);
-	while(!hashset_empty(old)) hashset_add(set, hashset_pop(set));
+	while(!hashset_empty(old)) hashset_add(set, hashset_pop(old));
 	return set;
 }
 
@@ -555,6 +559,8 @@ board_init(struct board *game)
 	board_init_bombNumber(game);
 	printf("finishedBombNumber\n");
 	game->displayQueue = queue_init();
+	game->pmove = hashset_init(INITAL_SIZE);
+	game->flagSet = hashset_init(INITAL_SIZE);
 #if DEBUG
 	/*board_clickAll(game); */
 #endif
@@ -571,6 +577,8 @@ static void
 board_clear(struct board *game)
 {
 	hashset_free(game->moveSet);
+	hashset_free(game->pmove);
+	hashset_free(game->flagSet);
 	queue_free(game->displayQueue);
 	free(game->grid);
 	game->foundCount = 0;
@@ -607,6 +615,8 @@ minesweep_init(Display *dpy, Window window)
 			lore->game.tileWidth, lore->game.tileHeight, lore->game.bwidth, 
 			lore->game.bheight, lore->game.bombCount, lore->speed);
 
+	lore->game.alwaysWin = get_boolean_resource(lore->dsp, "alwayswin", "Boolean");
+
 	board_init(&lore->game);
 	
 	lore->wh = (lore->xlim)/lore->game.tileWidth; 
@@ -640,6 +650,7 @@ static void
 update_qflag(struct board *game, struct tile *data)
 {
 	int i, j;
+	if(data->state!=CLICKED) return;
 	data->flagCount = 0;
 	data->unclicked = 0;
 	data->minY = data->y;
@@ -662,6 +673,25 @@ update_qflag(struct board *game, struct tile *data)
 }
 
 static void
+checkArea(struct board *game, struct tile *data)
+{
+	int i, j;
+	struct tile *other;
+	for(i=-1; i<=1; i++) for(j=-1; j<=1; j++)
+	{
+		other = &game->grid[POS((data->y+i), (data->x+j), data->w)];
+		if(other->state == NONE && !hashset_contains(game->moveSet, other)) 
+		{
+			hashset_add(game->pmove, other);
+		}
+		else if(other->bombNumber > 0 && other->state==CLICKED) 
+		{
+			hashset_add(game->flagSet, other);
+		}
+	}
+}
+
+static void
 clickMove(struct board *game, int y, int x)
 {
 	int i, j;
@@ -677,15 +707,17 @@ clickMove(struct board *game, int y, int x)
 		{
 			clickMove(game, y+i, x+j);
 		}
+		checkArea(game, &game->grid[place]);
 	} 
 	else 
 	{
-		update_qflag(game, &game->grid[place]);
 		if(game->grid[place].isBomb) 
 		{
 			printf("BOOOM\n");
 			game->gameOver = 1;
+			return;
 		}
+		checkArea(game, &game->grid[place]);
 	}
 }
 
@@ -694,6 +726,7 @@ flagMove(struct board *game, struct tile *data)
 {
 	data->state = FLAGGED;
 	game->foundCount++;
+	checkArea(game, data);
 }
 
 /*
@@ -733,14 +766,16 @@ couldPattern(struct board *game, struct tile *previous, struct tile *current, st
 
 /*
  * If I could make a move then adds it to the move set
+ * returns true if it added it to the set
+ * false otherwise
  */ 
-static void
+static Bool
 couldMove(struct board *game, struct tile *place)
 {
 	int i, j, y, x;
 	struct tile *other;
 	struct tile *current;
-	if(place->state != NONE) return;
+	if(place->state != NONE) return False;
 	for(i=-1; i<=1; i++) for(j=-1; j<=1; j++)
 	{
 		other = &game->grid[POS((place->y+i), (place->x+j), game->bwidth)];
@@ -749,21 +784,87 @@ couldMove(struct board *game, struct tile *place)
 		{
 			place->move = FLAG;
 			hashset_add(game->moveSet, place);
-			return;
+			return True;
 		}
 		else if(other->bombNumber - other->flagCount == 0)
 		{
 			place->move = CLICK;
 			hashset_add(game->moveSet, place);
-			return;
+			return True;
 		}
 		for(y=-1; y<=1; y++) for(x=-1; x<=1; x++)
 		{
 			if(abs(y)==abs(x)) continue;
 			current = &game->grid[POS((other->y+y), (other->x+x), other->w)];
 			if(current->state != CLICKED || other == current || current->bombNumber==0) continue;
-			if(couldPattern(game, other, current, place)) return;
+			if(couldPattern(game, other, current, place)) return True;
 		}
+	}
+	return False;
+}
+
+/*
+ * attempts to make a move from the set
+ * will return True if it was able to make a move
+ * false otherwise
+ */
+static Bool
+move_fromSet(struct board *game)
+{
+	struct tile *move;
+	if(hashset_empty(game->moveSet)) return False;
+	move = hashset_pop(game->moveSet);
+	if(move->move == CLICK) clickMove(game, move->y, move->x);
+	else flagMove(game, move);
+	move->move = CANT;
+	return True;
+}
+
+static void
+move_updateAll(struct board *game)
+{
+	int y, x;
+	for(y=1; y<=game->tileHeight; y++) for(x=1; x<=game->tileWidth; x++)
+	{
+		update_qflag(game, &game->grid[POS(y, x, game->bwidth)]);
+	}
+}
+
+static void
+move_checkAll(struct board *game)
+{
+	int y, x;
+	for(y=1; y<=game->tileHeight; y++) for(x=1; x<=game->tileWidth; x++)
+	{
+		couldMove(game, &game->grid[POS(y, x, game->bwidth)]);
+	}
+}
+
+/*
+ * will update first the q flag from the set
+ * then will check move posibilitys from the pmove set
+ */
+static void
+repopulate_area(struct board *game)
+{
+	struct tile *move;
+	/*struct queue *store = queue_init(); */
+	
+	while(!hashset_empty(game->flagSet)) 
+	{
+		update_qflag(game, hashset_pop(game->flagSet));
+	}
+	while(!hashset_empty(game->pmove)) 
+	{
+		move = hashset_pop(game->pmove);
+		/*if(!*/couldMove(game, move)/*) queue_add(store, move)*/;
+	}
+	/*while(!queue_empty(store)) hashset_add(game->pmove, queue_pop(store));*/
+	if(hashset_empty(game->moveSet))
+	{
+		printf("checking all\n");
+		move_updateAll(game);
+		move_checkAll(game);
 	}
 }
 
@@ -771,44 +872,23 @@ static void
 playGame(struct board *game)
 {
 	int y, x;
-	struct tile *move;
 	int fullLength;
 	int position;
-	if(!hashset_empty(game->moveSet)) /* I have a move, going to make it */
+	if(!move_fromSet(game))
 	{
-		move = hashset_pop(game->moveSet);
-		if(move->move == CLICK) clickMove(game, move->y, move->x);
-		else flagMove(game, move);
-		move->move = CANT;
-	}
-	else /* re-populate the move set */
-	{
-		for(y=1; y<=game->tileHeight; y++) for(x=1; x<=game->tileWidth; x++)
-		{
-			move = &game->grid[POS(y, x, game->bwidth)];
-			if(move->state == CLICKED && move->bombNumber>0)
-				update_qflag(game, move);
-		}
-		for(y=1; y<=game->tileHeight; y++) for(x=1; x<=game->tileWidth; x++)
-		{
-			couldMove(game, &game->grid[POS(y, x, game->bwidth)]);
-		}
-		if(!hashset_empty(game->moveSet))
-		{
-			move = hashset_pop(game->moveSet);
-			if(move->move == CLICK) clickMove(game, move->y, move->x);
-			else flagMove(game, move);
-			move->move = CANT;
-		}
-		else /* time to guess */
+		repopulate_area(game);
+		if(!move_fromSet(game)) /* trying again */
 		{
 			printf("time to guess\n");
 			fullLength = game->bwidth*game->bheight;
 			do
 			{
+				BACK:
 				position = random() % fullLength;
 				x = position%game->bwidth;
 				y = (int) position/game->bwidth;
+				if(game->alwaysWin && game->grid[position].isBomb) goto BACK;
+				/* first time using a goto... I feel dirty */
 			} while(game->grid[position].state != NONE);
 			printf("guess click move of %d %d\n", y, x);
 			clickMove(game, y, x); /* just guessing here and clicking */
@@ -942,7 +1022,7 @@ minesweep_draw(Display *dsp, Window window, void *closure)
 			temp=1;
 		draw_grid(lore);
 		board_clear(&lore->game);
-		if(temp) return lore->speed*50;
+		if(temp) return lore->speed*100;
 		return lore->speed*3;
 	}
 
