@@ -154,7 +154,8 @@ static struct tile {
 	
 	/* the Q flags structure, only becomes relevent when tile is clicked */
 	int flagCount; 
-	int unclicked; 
+	int unclicked;
+	int minY, minX, maxY, maxX;
 } tile;
 
 /* used by the hash set to contain the links */
@@ -218,10 +219,10 @@ struct state { /* this puppy holds all the info that will be moved from frame to
 static const char *minesweep_defaults [] = {
 	".background:	black",
 	".foreground:	white",
-	".width: 		8",
-	".height: 		8",
-	".bombcount: 	10",
-	"*speed: 		1000000",
+	".width: 		30",
+	".height: 		16",
+	".bombcount: 	99",
+	"*speed: 		10000",
 #ifdef HAVE_MOBILE
 	"*ignoreRotation: True",
 #endif
@@ -641,11 +642,22 @@ update_qflag(struct board *game, struct tile *data)
 	int i, j;
 	data->flagCount = 0;
 	data->unclicked = 0;
+	data->minY = data->y;
+	data->minX = data->x;
+	data->maxY = data->y;
+	data->maxX = data->x;
 	for(i=-1; i<=1; i++) for(j=-1; j<=1; j++)
 	{
 		struct tile *place = &game->grid[POS((data->y+i), (data->x+j), data->w)];
 		if(place->state==FLAGGED) data->flagCount++;
-		if(place->state==NONE) data->unclicked++;
+		if(place->state==NONE) 
+		{
+			data->unclicked++;
+			if(place->y < data->minY) data->minY = place->y;
+			else if(place->y > data->maxY) data->maxY = place->y;
+			if(place->x < data->minX) data->minX = place->x;
+			else if(place->x > data->maxX) data->maxX = place->x;
+		}
 	}
 }
 
@@ -668,7 +680,12 @@ clickMove(struct board *game, int y, int x)
 	} 
 	else 
 	{
-		if(game->grid[place].isBomb) game->gameOver = 1;
+		update_qflag(game, &game->grid[place]);
+		if(game->grid[place].isBomb) 
+		{
+			printf("BOOOM\n");
+			game->gameOver = 1;
+		}
 	}
 }
 
@@ -680,30 +697,72 @@ flagMove(struct board *game, struct tile *data)
 }
 
 /*
+ * test if I can make a 1 1 or a 1 2 move
+ * returns true if I can so I no longer have to move 
+ * else returns false
+ */
+static Bool 
+couldPattern(struct board *game, struct tile *previous, struct tile *current, struct tile *move)
+{
+	if(current->x>=move->x-1 && current->x<=move->x+1 
+			&&current->y>=move->y-1 && current->y<=move->y+1) return False;
+	if(current->maxX-previous->minX>=3  /* make sure I am within range of the liberty */
+			|| previous->maxX-current->minX >=3 
+			|| current->maxY-previous->minY >=3
+			|| previous->maxY-current->minY >=3) return False;
+
+
+	if(current->bombNumber-current->flagCount == current->unclicked-1 && current->unclicked == 2 
+			&& previous->bombNumber-previous->flagCount == previous->unclicked-2 
+			&& previous->unclicked == 3)
+	{
+		move->move = CLICK;
+		hashset_add(game->moveSet, move);
+		return True;
+	}
+	if(current->bombNumber-current->flagCount == current->unclicked-1 && current->unclicked == 2
+			&& previous->bombNumber-previous->flagCount == previous->unclicked-1 
+			&& previous->unclicked == 3)
+	{
+		move->move = FLAG;
+		hashset_add(game->moveSet, move);
+		return True;
+	}
+	return False;
+}
+
+/*
  * If I could make a move then adds it to the move set
  */ 
 static void
-couldMove(struct board *game, int y, int x)
+couldMove(struct board *game, struct tile *place)
 {
-	int i, j;
+	int i, j, y, x;
 	struct tile *other;
-	struct tile *place = &game->grid[POS(y, x, game->bwidth)];
+	struct tile *current;
 	if(place->state != NONE) return;
 	for(i=-1; i<=1; i++) for(j=-1; j<=1; j++)
 	{
-		other = &game->grid[POS((y+i), (x+j), game->bwidth)];
-		if(other->state != CLICKED) continue;
+		other = &game->grid[POS((place->y+i), (place->x+j), game->bwidth)];
+		if(other->state != CLICKED || other == place || other->bombNumber==0) continue;
 		if(other->unclicked == other->bombNumber-other->flagCount)
 		{
 			place->move = FLAG;
 			hashset_add(game->moveSet, place);
-			break;
+			return;
 		}
 		else if(other->bombNumber - other->flagCount == 0)
 		{
 			place->move = CLICK;
 			hashset_add(game->moveSet, place);
-			break;
+			return;
+		}
+		for(y=-1; y<=1; y++) for(x=-1; x<=1; x++)
+		{
+			if(abs(y)==abs(x)) continue;
+			current = &game->grid[POS((other->y+y), (other->x+x), other->w)];
+			if(current->state != CLICKED || other == current || current->bombNumber==0) continue;
+			if(couldPattern(game, other, current, place)) return;
 		}
 	}
 }
@@ -724,7 +783,6 @@ playGame(struct board *game)
 	}
 	else /* re-populate the move set */
 	{
-		printf("out of moves populating move set\n");
 		for(y=1; y<=game->tileHeight; y++) for(x=1; x<=game->tileWidth; x++)
 		{
 			move = &game->grid[POS(y, x, game->bwidth)];
@@ -733,7 +791,7 @@ playGame(struct board *game)
 		}
 		for(y=1; y<=game->tileHeight; y++) for(x=1; x<=game->tileWidth; x++)
 		{
-			couldMove(game, y, x);
+			couldMove(game, &game->grid[POS(y, x, game->bwidth)]);
 		}
 		if(!hashset_empty(game->moveSet))
 		{
@@ -884,7 +942,7 @@ minesweep_draw(Display *dsp, Window window, void *closure)
 			temp=1;
 		draw_grid(lore);
 		board_clear(&lore->game);
-		if(temp) return lore->speed*500;
+		if(temp) return lore->speed*50;
 		return lore->speed*3;
 	}
 
