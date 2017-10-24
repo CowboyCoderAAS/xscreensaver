@@ -39,7 +39,7 @@
 		high="100000"
 		default="10000"
 		/>
-	<boolean id="alwaywin"
+	<boolean id="alwayswin"
 		_label="Will always win"
 		arg-set="-alwayswin"
 		/>

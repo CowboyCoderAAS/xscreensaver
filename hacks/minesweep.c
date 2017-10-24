@@ -216,6 +216,7 @@ struct state { /* this puppy holds all the info that will be moved from frame to
 	int xlim, ylim;
 	int wh;
 	struct board game;
+	Bool resized;
 };
 
 /* the options */
@@ -226,6 +227,7 @@ static const char *minesweep_defaults [] = {
 	".height: 		50",
 	".bombcount: 	525",
 	"*speed: 		5000",
+	".alwayswin: 	false",
 #ifdef HAVE_MOBILE
 	"*ignoreRotation: True",
 #endif
@@ -237,7 +239,7 @@ static XrmOptionDescRec minesweep_options [] = {
 	{"-height", ".height", XrmoptionSepArg, 0},
 	{"-bombcount", ".bombcount", XrmoptionSepArg, 0},
 	{"-speed", ".speed", XrmoptionSepArg, 0},
-	{"-alwayswin", ".alwayswin", XrmoptionNoArg},
+	{"-alwayswin", ".alwayswin", XrmoptionNoArg, "true"},
 	{ 0, 0, 0, 0 } /* to terminate the list */
 };
 
@@ -551,13 +553,9 @@ board_init(struct board *game)
 	game->tileWidth = game->bwidth-2; /* TODO test if I need this any more */
 	game->tileHeight = game->bheight-2;
 	board_init_grid(game);
-	printf("finished init grid\n");
 	board_init_firstClick(game);
-	printf("finished first click\n");
 	board_init_bombs(game);
-	printf("finisehd init bobm\n");
 	board_init_bombNumber(game);
-	printf("finishedBombNumber\n");
 	game->displayQueue = queue_init();
 	game->pmove = hashset_init(INITAL_SIZE);
 	game->flagSet = hashset_init(INITAL_SIZE);
@@ -588,10 +586,25 @@ board_clear(struct board *game)
 	board_init(game);
 }
 
+static void
+window_init(struct state *lore, int width, int height)
+{
+	int heightOffset, widthOffset;
+	lore->xlim = width;
+	lore->ylim = height;
+	lore->wh = (lore->xlim)/lore->game.tileWidth; 
+	if(lore->wh>(lore->ylim)/lore->game.tileHeight) 
+		lore->wh = (lore->ylim)/lore->game.tileHeight;
+	heightOffset = (lore->ylim-lore->wh*lore->game.tileHeight)/2;
+	widthOffset = (lore->xlim-lore->wh*lore->game.tileWidth)/2;
+	XMoveResizeWindow(lore->dsp, lore->gridWindow, widthOffset, heightOffset, 
+			lore->xlim*lore->game.tileWidth, lore->ylim*lore->game.tileHeight);
+	lore->resized = False;
+}
+
 static void *
 minesweep_init(Display *dpy, Window window)
 {
-	int heightOffset, widthOffset;
 	XWindowAttributes atter;
 	XGCValues value;
 	struct state *lore = (struct state *) calloc(1, sizeof(*lore));
@@ -601,8 +614,6 @@ minesweep_init(Display *dpy, Window window)
 
 	XGetWindowAttributes(lore->dsp, lore->window, &atter);
 	
-	lore->xlim = atter.width;
-	lore->ylim = atter.height;
 	lore->cmap = atter.colormap;
 	
 	lore->game.tileWidth = get_integer_resource(lore->dsp, "width", "Integer");
@@ -611,36 +622,24 @@ minesweep_init(Display *dpy, Window window)
 	lore->game.bheight = lore->game.tileHeight+2;
 	lore->game.bombCount = get_integer_resource(lore->dsp, "bombcount", "Integer");
 	lore->speed = get_integer_resource(lore->dsp, "speed", "Integer");
+	lore->game.alwaysWin = get_boolean_resource(lore->dsp, "alwayswin", "Boolean");
+
 	printf("tWidth %d tHeight %d bwidth %d bheight %d bombCount %d speed %d",
 			lore->game.tileWidth, lore->game.tileHeight, lore->game.bwidth, 
 			lore->game.bheight, lore->game.bombCount, lore->speed);
 
-	lore->game.alwaysWin = get_boolean_resource(lore->dsp, "alwayswin", "Boolean");
-
-	board_init(&lore->game);
 	
-	lore->wh = (lore->xlim)/lore->game.tileWidth; 
-	if(lore->wh>(lore->ylim)/lore->game.tileHeight) 
-		lore->wh = (lore->ylim)/lore->game.tileHeight;
-	heightOffset = (lore->ylim-lore->wh*lore->game.tileHeight)/2;
-	widthOffset = (lore->xlim-lore->wh*lore->game.tileWidth)/2;
-	lore->gridWindow = XCreateWindow(lore->dsp, lore->window, widthOffset, heightOffset, 
-			lore->xlim*lore->game.tileWidth, lore->ylim*lore->game.tileHeight,
-			GRID_BOARDER, CopyFromParent, CopyFromParent, CopyFromParent, 0, 0);
+	board_init(&lore->game);
+	lore->gridWindow = XCreateWindow(lore->dsp, lore->window, 10, 10, 10, 10, GRID_BOARDER,
+			CopyFromParent, CopyFromParent, CopyFromParent, 0, 0);
 	XMapWindow(lore->dsp, lore->gridWindow);
-
-	if(lore->game.tileWidth*lore->game.tileHeight>=lore->game.bombCount-9)
-	{ /* not enough space for bombs exiting XXX make it revert to default */
-		/*fprintf(stderr, "exiting cause I can\n");
-		exit(1);*/
-		printf("tileWidth %d tileHight %d\n", lore->game.tileWidth, lore->game.tileHeight);
-	}
+	window_init(lore, atter.width, atter.height);
+	
 	value.foreground = get_pixel_resource(lore->dsp, lore->cmap, "foreground", "Foreground");
 	value.background = get_pixel_resource(lore->dsp, lore->cmap, "background", "Background");
 	value.fill_style = FillSolid;
 	lore->gc = XCreateGC(lore->dsp, lore->window, GCForeground|GCBackground|GCFillStyle, &value);
 
-	printf("finished init\n");
 	return lore;
 }
 
@@ -879,7 +878,6 @@ playGame(struct board *game)
 		repopulate_area(game);
 		if(!move_fromSet(game)) /* trying again */
 		{
-			printf("time to guess\n");
 			fullLength = game->bwidth*game->bheight;
 			do
 			{
@@ -1008,8 +1006,21 @@ draw_grid(struct state *lore)
 static unsigned long
 minesweep_draw(Display *dsp, Window window, void *closure)
 {
+	XGCValues value;
 	struct state *lore = (struct state *) closure;
 	int temp=0;
+	if(lore->resized) /* going to blank out the screen */
+	{
+		/*
+		value.foreground = get_pixel_resource(lore->dsp, lore->cmap, "foreground", "Foreground");
+		value.background = get_pixel_resource(lore->dsp, lore->cmap, "background", "Background");
+		value.fill_style = FillSolid;
+		XChangeGC(lore->dsp, lore->gc, 
+				GCForeground|GCBackground|GCFillStyle, &value);
+		XFillRectangle(dsp, window, lore->gc, 0, 0, lore->xlim, lore->ylim);
+		lore->resized = False;
+		*/
+	}
 	if(lore->game.firstY >=0)
 	{
 		lore->game.firstY = -1;
@@ -1037,10 +1048,11 @@ minesweep_draw(Display *dsp, Window window, void *closure)
 static void
 minesweep_reshape(Display *dsp, Window window, void *closure, unsigned int w, unsigned int h)
 {
-	/* TODO add more to this */
 	struct state *lore = (struct state *) closure;
-	lore->xlim = w;
-	lore->ylim = h;
+	window_init(lore, w, h);
+	queue_free(lore->game.displayQueue);
+	lore->game.displayQueue = queue_init();
+	lore->resized = True;
 }
 
 static Bool
