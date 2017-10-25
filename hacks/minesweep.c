@@ -172,10 +172,10 @@ static struct hashset {
 	size_t startElement;
 } hashset;
 
-static struct queue {
+static struct stack {
 	struct bucket *front;
 	size_t size;
-} queue;
+} stack;
 
 /*
  * holds everything I have an interest in playing the minesweep game besides drawing it
@@ -199,7 +199,7 @@ static struct board {
 	struct hashset *moveSet; /* holds the moves that I am able to make in the game */
 	struct hashset *pmove; /* holds potential moves that will need testing */
 	struct hashset *flagSet; /* to update the qflags */
-	struct queue *displayQueue; /* lets me know what tiles need updating */
+	struct stack *displaystack; /* lets me know what tiles need updating */
 
 	int firstY, firstX; /* the first moves that will be made,-1 if I have already made a first move*/
 
@@ -243,18 +243,18 @@ static XrmOptionDescRec minesweep_options [] = {
 	{ 0, 0, 0, 0 } /* to terminate the list */
 };
 
-/*** queue functions ***/
-static struct queue *
-queue_init(void)
+/*** stack functions ***/
+static struct stack *
+stack_init(void)
 {
-	struct queue *result = (struct queue *) malloc(sizeof(struct queue));
-	memset(result, 0, sizeof(struct queue));
+	struct stack *result = (struct stack *) malloc(sizeof(struct stack));
+	memset(result, 0, sizeof(struct stack));
 	result->size = 0;
 	return result;
 }
 
 static void
-queue_add(struct queue *qu, struct tile *value)
+stack_add(struct stack *qu, struct tile *value)
 {
 	struct bucket *ted = (struct bucket *) malloc(sizeof(struct bucket));
 	ted->data = value;
@@ -264,7 +264,7 @@ queue_add(struct queue *qu, struct tile *value)
 }
 
 static struct tile *
-queue_pop(struct queue *qu)
+stack_pop(struct stack *qu)
 {
 	struct tile *result;
 	struct bucket *temp;
@@ -278,17 +278,17 @@ queue_pop(struct queue *qu)
 }
 
 static void
-queue_free(struct queue *qu)
+stack_free(struct stack *qu)
 {
-	while(qu->size) queue_pop(qu);
+	while(qu->size) stack_pop(qu);
 	free(qu);
 }
 
 /*
- * returns true if queue is empty false otherwise
+ * returns true if stack is empty false otherwise
  */
 static Bool
-queue_empty(struct queue *qu)
+stack_empty(struct stack *qu)
 {
 	return !qu->size;
 }
@@ -556,7 +556,7 @@ board_init(struct board *game)
 	board_init_firstClick(game);
 	board_init_bombs(game);
 	board_init_bombNumber(game);
-	game->displayQueue = queue_init();
+	game->displaystack = stack_init();
 	game->pmove = hashset_init(INITAL_SIZE);
 	game->flagSet = hashset_init(INITAL_SIZE);
 #if DEBUG
@@ -577,7 +577,7 @@ board_clear(struct board *game)
 	hashset_free(game->moveSet);
 	hashset_free(game->pmove);
 	hashset_free(game->flagSet);
-	queue_free(game->displayQueue);
+	stack_free(game->displaystack);
 	free(game->grid);
 	game->foundCount = 0;
 	game->firstY = 0;
@@ -699,7 +699,7 @@ clickMove(struct board *game, int y, int x)
 	if(type == BOARDER || type == CLICKED || type == FLAGGED) return;
 	game->grid[place].state = CLICKED;
 	game->unclicked--;
-	queue_add(game->displayQueue, &game->grid[place]);
+	stack_add(game->displaystack, &game->grid[place]);
 	if(game->grid[place].bombNumber==0 && !game->grid[place].isBomb)
 	{
 		for(i=-1; i<=1; i++) for(j=-1; j<=1; j++)
@@ -847,7 +847,7 @@ static void
 repopulate_area(struct board *game)
 {
 	struct tile *move;
-	/*struct queue *store = queue_init(); */
+	/*struct stack *store = stack_init(); */
 	
 	while(!hashset_empty(game->flagSet)) 
 	{
@@ -856,9 +856,9 @@ repopulate_area(struct board *game)
 	while(!hashset_empty(game->pmove)) 
 	{
 		move = hashset_pop(game->pmove);
-		/*if(!*/couldMove(game, move)/*) queue_add(store, move)*/;
+		/*if(!*/couldMove(game, move)/*) stack_add(store, move)*/;
 	}
-	/*while(!queue_empty(store)) hashset_add(game->pmove, queue_pop(store));*/
+	/*while(!stack_empty(store)) hashset_add(game->pmove, stack_pop(store));*/
 	if(hashset_empty(game->moveSet))
 	{
 		printf("checking all\n");
@@ -988,7 +988,7 @@ draw_grid(struct state *lore)
 {
 	int i;
 	int totalLength = lore->game.bwidth*lore->game.bheight;
-	if(queue_empty(lore->game.displayQueue)) /* empty queue display all */
+	if(stack_empty(lore->game.displaystack)) /* empty stack display all */
 	{
 		for(i=0; i<totalLength; i++) /* TODO could be more effetient */
 		{
@@ -996,9 +996,9 @@ draw_grid(struct state *lore)
 					&lore->game.grid[i]);
 		}
 	} 
-	else while(!queue_empty(lore->game.displayQueue))
+	else while(!stack_empty(lore->game.displaystack))
 	{
-		struct tile *data = queue_pop(lore->game.displayQueue);
+		struct tile *data = stack_pop(lore->game.displaystack);
 		draw_tile(lore->dsp, lore->gridWindow, lore->gc, lore->wh, data);
 	}
 }
@@ -1050,8 +1050,8 @@ minesweep_reshape(Display *dsp, Window window, void *closure, unsigned int w, un
 {
 	struct state *lore = (struct state *) closure;
 	window_init(lore, w, h);
-	queue_free(lore->game.displayQueue);
-	lore->game.displayQueue = queue_init();
+	stack_free(lore->game.displaystack);
+	lore->game.displaystack = stack_init();
 	lore->resized = True;
 }
 

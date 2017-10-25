@@ -36,7 +36,7 @@
 		_low-label="Slow"
 		_high-lable="Fast"
 		low="100"
-		high="100000"
+		high="1000000"
 		default="10000"
 		/>
 	<boolean id="alwayswin"
