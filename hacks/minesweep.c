@@ -706,7 +706,7 @@ clickMove(struct board *game, int y, int x)
 		{
 			clickMove(game, y+i, x+j);
 		}
-		checkArea(game, &game->grid[place]);
+		/*checkArea(game, &game->grid[place]);*/
 	} 
 	else 
 	{
@@ -885,7 +885,15 @@ playGame(struct board *game)
 				position = random() % fullLength;
 				x = position%game->bwidth;
 				y = (int) position/game->bwidth;
-				if(game->alwaysWin && game->grid[position].isBomb) goto BACK;
+				if(game->alwaysWin && game->grid[position].isBomb) 
+				{
+					if(game->unclicked==game->bombCount) /* only flagging left */
+					{
+						flagMove(game, &game->grid[position]);
+						return;
+					}
+					goto BACK;
+				}
 				/* first time using a goto... I feel dirty */
 			} while(game->grid[position].state != NONE);
 			printf("guess click move of %d %d\n", y, x);
@@ -1006,7 +1014,7 @@ draw_grid(struct state *lore)
 static unsigned long
 minesweep_draw(Display *dsp, Window window, void *closure)
 {
-	XGCValues value;
+	/*XGCValues value; */
 	struct state *lore = (struct state *) closure;
 	int temp=0;
 	if(lore->resized) /* going to blank out the screen */
